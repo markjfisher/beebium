@@ -291,7 +291,7 @@ Complete transcripts of BBC Micro documentation:
 - Keyboard matrix with type-ahead
 - gRPC service layer (8 services)
 - macOS frontend with Metal rendering
-- Service advertisement over mDNS on all platforms (macOS Bonjour, Linux Avahi, Windows dual-provider); browse/discovery client on macOS (Bonjour) and Windows (Apple Bonjour dnssd.dll when installed, else native DnsServiceBrowse/Resolve, selected at runtime); Linux still uses NullBrowser
+- Service advertisement AND browse/discovery over mDNS on all platforms: macOS (Bonjour), Linux (Avahi, dlopen'd), Windows (dual-provider: Apple Bonjour dnssd.dll when installed, else native DnsService*, selected at runtime). Full bidirectional AUN peer discovery everywhere
 - Python test client
 
 ### Future Work

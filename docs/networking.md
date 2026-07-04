@@ -91,7 +91,7 @@ The TXT record schema, the rationale for the vendor-neutral service type, and th
 **Platform support today:**
 
 - macOS — full support via Bonjour (`dns_sd.h`): both advertises and browses.
-- Linux — advertises via `AvahiAdvertiser` (libavahi-client, loaded at runtime with `dlopen`) but does not yet browse (`NullBrowser` fallback). So a Linux server publishes its `_aun._udp` announcement and peers can discover it, but the Linux server cannot itself discover peers — supply `map=` for the outbound direction. Requires a running `avahi-daemon`; where Avahi is absent the advertiser degrades silently to a no-op. A real `AvahiBrowser` using `avahi-client` browse is the obvious follow-up.
+- Linux — full bidirectional discovery via `AvahiAdvertiser` and `AvahiBrowser` (libavahi-client, loaded at runtime with `dlopen`), so a Linux server both publishes and discovers `_aun._udp` peers with no manual `map=` needed. Requires a running `avahi-daemon`; where Avahi is absent both sides degrade silently to a no-op (advertiser) / unavailable (browser).
 - Windows — full bidirectional discovery (publishes and discovers `_aun._udp` peers, no manual `map=` needed), with a provider chosen at run time:
   - **Apple Bonjour** (`dnssd.dll`) when it is installed (iTunes, Adobe apps, etc. bundle it). Bonjour takes over the mDNS responder (UDP 5353), so where present it is preferred; it exposes the same `dns_sd.h` API the macOS advertiser/browser use, resolved at run time via `GetProcAddress` (no Bonjour SDK needed to build).
   - **Native `windns.h`** (`DnsServiceRegister` / `DnsServiceBrowse` / `DnsServiceResolve`) otherwise. Requires Windows 10 1903+; always present, so there is always a provider.
@@ -100,8 +100,6 @@ The TXT record schema, the rationale for the vendor-neutral service type, and th
 
 **Future improvements:**
 
-- `AvahiBrowser` using `avahi-client` browse to bring symmetric discovery to Linux (macOS and Windows already browse).
-- `AvahiBrowser` for Linux (the advertise side, `AvahiAdvertiser`, is already implemented).
 - An optional `--aun no-discovery` switch (or `BEEBIUM_AUN_DISCOVERY=off`) for environments where the operator wants to opt out of mDNS entirely (corporate networks, paranoid users) without disabling the AUN transport.
 - A future DSCP (Discovery Service Coordination Protocol, name TBD) layer on top of mDNS could let peers negotiate richer capability information — e.g. supported AUN extensions, machine model, fileserver hosting status — without requiring every consumer to talk gRPC. mDNS shipped first because it's independently useful; DSCP is the natural next step if richer per-peer metadata is wanted.
 - Bridge-as-bridge announcements via a separate `_acorn-bridge._udp` service type, once Beebium grows a machine type with two ADLCs (the Acorn Econet Bridge). This is reserved but not implemented; only `_aun._udp` is published today.
@@ -112,7 +110,7 @@ All three backends operate behind the `FourWayHandshake` decorator (`aun_mode = 
 
 ### When to use which
 
-- **Other Beebium emulators on the same host or LAN:** `AunBackend`. mDNS discovery handles the peer-table population automatically (no manual `--aun map=` needed) wherever the discovery layer can browse (macOS and Windows today); fall back to explicit `map=` for hermetic test runs, for the outbound direction on platforms that advertise but cannot yet browse (Linux, until `AvahiBrowser` lands), or for WAN deployments.
+- **Other Beebium emulators on the same host or LAN:** `AunBackend`. mDNS discovery handles the peer-table population automatically (no manual `--aun map=` needed) on all three platforms (macOS, Windows, Linux); fall back to explicit `map=` for hermetic test runs, for hosts without a working mDNS responder installed, or for WAN deployments.
 - **A real BBC, Acorn fileserver, or other Econet peripheral:** `PiconetBackend` with a Piconet device on the wire. The wire's clock generator and termination must be present (the Piconet is a participant, not a clock source).
 - **Testing only:** `TestBackend` (or the test fakes `MockPiconetSerial`, `FakePiconetDevice`, `FakePiconetDeviceOnPty`, `AunBridgePiconetDevice` in `tests/piconet/`). The Piconet integration's test stack is described in `docs/discussion/piconet-feasibility.md` ("Testing Strategy" section).
 

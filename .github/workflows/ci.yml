@@ -345,6 +345,14 @@ jobs:
           # test (libavahi/daemon absent) becomes a failure so the Linux
           # advertiser is never shipped untested.
           BEEBIUM_REQUIRE_MDNS: "1"
+          # BEEBIUM_REQUIRE_MDNS_BROWSE is intentionally NOT set for the first
+          # run. The Avahi browser (AvahiBrowser) is validated on real hardware
+          # (its [browser][integration] round trip passes under the required
+          # gate on an aarch64 Debian Pi with avahi-daemon), but the CI
+          # container's networking differs, so leave it skip-not-fail here until
+          # a run shows the round trip completing on the runner; then set
+          # BEEBIUM_REQUIRE_MDNS_BROWSE: "1" (as the macOS jobs do) so the Linux
+          # browser is required-tested on every push.
         # --timeout 120: fail a hung test after 2 min. The slowest legitimate
         # test is ~37s on the slowest (x86_64) runner, so this leaves ~3x
         # headroom while capping the wasted time when a test deadlocks.

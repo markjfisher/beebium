@@ -74,11 +74,15 @@ elseif(UNIX AND NOT APPLE)
     if(AVAHI_FOUND)
         target_sources(beebium_discovery PRIVATE
             src/AvahiAdvertiser.cpp
+            src/AvahiBrowser.cpp
         )
         target_include_directories(beebium_discovery PRIVATE ${AVAHI_INCLUDE_DIRS})
         # Link the dynamic loader (dlopen/dlsym), not libavahi-client itself.
         target_link_libraries(beebium_discovery PRIVATE ${CMAKE_DL_LIBS})
-        target_compile_definitions(beebium_discovery PRIVATE BEEBIUM_HAS_AVAHI)
+        target_compile_definitions(beebium_discovery PRIVATE
+            BEEBIUM_HAS_AVAHI
+            BEEBIUM_HAS_AVAHI_BROWSE
+        )
     endif()
 endif()
 

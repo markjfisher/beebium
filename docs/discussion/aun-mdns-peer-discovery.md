@@ -2,7 +2,7 @@
 
 Replacing the manual `--aun map=` peer table with opportunistic discovery of other AUN endpoints on the local network, using the standard mDNS / DNS-SD machinery Beebium already employs for service discovery.
 
-Status: **Implemented** on branch `aun-mdns-peer-discovery`. Beebium publishes and consumes `_aun._udp` announcements; macOS and Windows have full bidirectional support (Bonjour; DnsServiceBrowse/Resolve), Linux advertises via Avahi but does not yet browse (`AvahiBrowser` follow-up). See `docs/networking.md` for the user-facing description and known platform gaps.
+Status: **Implemented** on branch `aun-mdns-peer-discovery`. Beebium publishes and consumes `_aun._udp` announcements; all three platforms have full bidirectional support -- macOS (Bonjour), Windows (Apple Bonjour when installed, else native DnsService*), and Linux (Avahi advertise + browse). See `docs/networking.md` for the user-facing description and known platform gaps.
 
 ---
 
