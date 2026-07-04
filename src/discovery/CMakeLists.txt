@@ -4,7 +4,7 @@
 # Platform-specific implementations:
 # - macOS: Bonjour (dns_sd.h)
 # - Windows: windns.h (Windows 10 1903+)
-# - Linux: Avahi (future)
+# - Linux: Avahi (libavahi-client, loaded at runtime via dlopen)
 
 add_library(beebium_discovery STATIC
     src/NullAdvertiser.cpp
@@ -47,19 +47,24 @@ elseif(WIN32)
         _WIN32_WINNT=0x0A00
         WINVER=0x0A00
     )
+elseif(UNIX AND NOT APPLE)
+    # Linux uses Avahi for mDNS. The Avahi client library is loaded at runtime
+    # via dlopen (see AvahiAdvertiser.cpp), so the .deb/.tar.gz bundle keeps its
+    # runtime dependencies limited to the base C/C++ libraries. The dev headers
+    # are only needed at build time for the type and enum definitions; a build
+    # host without them simply falls back to NullAdvertiser.
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(AVAHI avahi-client)
+    endif()
+    if(AVAHI_FOUND)
+        target_sources(beebium_discovery PRIVATE
+            src/AvahiAdvertiser.cpp
+        )
+        target_include_directories(beebium_discovery PRIVATE ${AVAHI_INCLUDE_DIRS})
+        # Link the dynamic loader (dlopen/dlsym), not libavahi-client itself.
+        target_link_libraries(beebium_discovery PRIVATE ${CMAKE_DL_LIBS})
+        target_compile_definitions(beebium_discovery PRIVATE BEEBIUM_HAS_AVAHI)
+    endif()
 endif()
-
-# Future: Linux (Avahi)
-# if(UNIX AND NOT APPLE)
-#     find_package(PkgConfig)
-#     pkg_check_modules(AVAHI avahi-client)
-#     if(AVAHI_FOUND)
-#         target_sources(beebium_discovery PRIVATE
-#             src/AvahiAdvertiser.cpp
-#         )
-#         target_link_libraries(beebium_discovery PRIVATE ${AVAHI_LIBRARIES})
-#         target_include_directories(beebium_discovery PRIVATE ${AVAHI_INCLUDE_DIRS})
-#         target_compile_definitions(beebium_discovery PRIVATE BEEBIUM_HAS_AVAHI)
-#     endif()
-# endif()
 

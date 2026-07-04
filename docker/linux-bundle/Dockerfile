@@ -27,13 +27,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV VCPKG_FORCE_SYSTEM_BINARIES=1
 
 # Toolchain + vcpkg host-tool prerequisites + libuuid (the b2-derived 6502
-# shared lib links rt+uuid on Linux; rt is in glibc, uuid needs uuid-dev).
+# shared lib links rt+uuid on Linux; rt is in glibc, uuid needs uuid-dev) +
+# libavahi-client-dev (headers only: the discovery library dlopens
+# libavahi-client at runtime, so this adds no runtime dependency to the bundle).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build git curl ca-certificates \
         zip unzip tar pkg-config \
         autoconf automake autoconf-archive libtool m4 \
         python3 perl \
-        linux-libc-dev uuid-dev \
+        linux-libc-dev uuid-dev libavahi-client-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # vcpkg pinned to the SAME commit the macOS CI uses (lukka/run-vcpkg
