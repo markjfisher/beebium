@@ -514,6 +514,12 @@ private:
 
 ### Windows Browser Implementation
 
+> **Status: implemented.** `src/discovery/src/WindowsBrowser.cpp` ships a
+> `DnsServiceBrowse` + `DnsServiceResolve` browser gated by
+> `BEEBIUM_HAS_WINDOWS_MDNS_BROWSE`. The sketch below is the original design
+> outline; consult the source for the shipped behaviour (thread-pool callback
+> model, resolve-drain on `stop()`, TTL-0 goodbye handling).
+
 ```cpp
 // src/discovery/src/WindowsBrowser.cpp
 
@@ -1355,4 +1361,4 @@ See the main [lifecycle-management.md](lifecycle-management.md) for the overall 
 
 ## Open Questions
 
-1. **Windows API maturity**: The native Windows mDNS API (`windns.h`) has a [known bug](https://github.com/microsoft/WindowsAppSDK/issues/2543) where service type enumeration doesn't work. Direct service browsing (which is what Beebium uses) does work. Monitor this issue and test thoroughly on Windows.
+1. **Windows API maturity**: The native Windows mDNS API (`windns.h`) has a [known bug](https://github.com/microsoft/WindowsAppSDK/issues/2543) where service type enumeration doesn't work. Direct service browsing (which is what Beebium uses) does work, and `WindowsBrowser` relies only on direct browse/resolve. Open item: confirm the GitHub-hosted `windows-2022` CI image ships a working in-box mDNS responder so the browse round-trip test can be made required (`BEEBIUM_REQUIRE_MDNS_BROWSE`) rather than skip-on-absence; until then real-hardware validation is on the Slioch Windows machine.

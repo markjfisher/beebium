@@ -116,6 +116,13 @@ jobs:
           # Should only show system libraries, not Homebrew paths
 
       - name: Run tests
+        env:
+          # macOS Bonjour browse is reliable on the hosted runners, so require
+          # the browser integration round trip to actually run: a skipped
+          # browse test becomes a failure so the browser is never shipped
+          # untested. (The advertise side is asserted directly by the
+          # [advertiser][macos] cases via REQUIRE.)
+          BEEBIUM_REQUIRE_MDNS_BROWSE: "1"
         # --timeout 120: fail a hung test after 2 min. The slowest legitimate
         # test is ~37s on the slowest (x86_64) runner, so this leaves ~3x
         # headroom while capping the wasted time when a test deadlocks.
@@ -226,6 +233,13 @@ jobs:
           # Should only show system libraries, not Homebrew paths
 
       - name: Run tests
+        env:
+          # macOS Bonjour browse is reliable on the hosted runners, so require
+          # the browser integration round trip to actually run: a skipped
+          # browse test becomes a failure so the browser is never shipped
+          # untested. (The advertise side is asserted directly by the
+          # [advertiser][macos] cases via REQUIRE.)
+          BEEBIUM_REQUIRE_MDNS_BROWSE: "1"
         # --timeout 120: fail a hung test after 2 min. The slowest legitimate
         # test is ~37s on the slowest (x86_64) runner, so this leaves ~3x
         # headroom while capping the wasted time when a test deadlocks.
@@ -442,6 +456,16 @@ jobs:
         # See the macOS/Linux jobs for the rationale behind --timeout 120 and
         # --repeat until-pass:2. shell: bash uses the runner's Git Bash (with
         # -eo pipefail) so the retry-visibility logic matches the other jobs.
+        #
+        # BEEBIUM_REQUIRE_MDNS_BROWSE is deliberately NOT set here yet. The
+        # Windows browser ([browser][integration]) drives a real DnsServiceBrowse
+        # /Resolve round trip, which needs a working in-box mDNS responder; it is
+        # not yet confirmed whether the GitHub-hosted windows-2022 image provides
+        # one. Until a run proves the round trip completes here, these cases skip
+        # (rather than fail) when it does not, so an unrelated change is not
+        # blocked by CI infrastructure. Once confirmed, set
+        # BEEBIUM_REQUIRE_MDNS_BROWSE: "1" (as the macOS jobs do) so the Windows
+        # browser is required-tested on every push.
         shell: bash
         run: |
           ctest --test-dir build --build-config Release --output-on-failure --timeout 120 --repeat until-pass:2 2>&1 | tee ctest.log

@@ -92,11 +92,11 @@ The TXT record schema, the rationale for the vendor-neutral service type, and th
 
 - macOS — full support via Bonjour (`dns_sd.h`): both advertises and browses.
 - Linux — advertises via `AvahiAdvertiser` (libavahi-client, loaded at runtime with `dlopen`) but does not yet browse (`NullBrowser` fallback). So a Linux server publishes its `_aun._udp` announcement and peers can discover it, but the Linux server cannot itself discover peers — supply `map=` for the outbound direction. Requires a running `avahi-daemon`; where Avahi is absent the advertiser degrades silently to a no-op. A real `AvahiBrowser` using `avahi-client` browse is the obvious follow-up.
-- Windows — advertises via `DnsServiceRegister` but does not yet browse (`NullBrowser` fallback). A real `WindowsBrowser` using `DnsServiceBrowse` is the obvious follow-up.
+- Windows — advertises via `DnsServiceRegister` **and** browses via `WindowsBrowser` (`DnsServiceBrowse` + `DnsServiceResolve`), so a Windows server both publishes and discovers `_aun._udp` peers with no manual `map=` needed. Requires Windows 10 1903+ (the DnsService* mDNS APIs).
 
 **Future improvements:**
 
-- `WindowsBrowser` using `DnsServiceBrowse` + `DnsServiceResolve` to bring symmetric discovery to Windows.
+- `AvahiBrowser` using `avahi-client` browse to bring symmetric discovery to Linux (macOS and Windows already browse).
 - `AvahiBrowser` for Linux (the advertise side, `AvahiAdvertiser`, is already implemented).
 - An optional `--aun no-discovery` switch (or `BEEBIUM_AUN_DISCOVERY=off`) for environments where the operator wants to opt out of mDNS entirely (corporate networks, paranoid users) without disabling the AUN transport.
 - A future DSCP (Discovery Service Coordination Protocol, name TBD) layer on top of mDNS could let peers negotiate richer capability information — e.g. supported AUN extensions, machine model, fileserver hosting status — without requiring every consumer to talk gRPC. mDNS shipped first because it's independently useful; DSCP is the natural next step if richer per-peer metadata is wanted.
@@ -108,7 +108,7 @@ All three backends operate behind the `FourWayHandshake` decorator (`aun_mode = 
 
 ### When to use which
 
-- **Other Beebium emulators on the same host or LAN:** `AunBackend`. mDNS discovery handles the peer-table population automatically (no manual `--aun map=` needed) wherever the discovery layer can browse (macOS today); fall back to explicit `map=` for hermetic test runs, for the outbound direction on platforms that advertise but cannot yet browse (Linux and Windows, until `AvahiBrowser` / `WindowsBrowser` land), or for WAN deployments.
+- **Other Beebium emulators on the same host or LAN:** `AunBackend`. mDNS discovery handles the peer-table population automatically (no manual `--aun map=` needed) wherever the discovery layer can browse (macOS and Windows today); fall back to explicit `map=` for hermetic test runs, for the outbound direction on platforms that advertise but cannot yet browse (Linux, until `AvahiBrowser` lands), or for WAN deployments.
 - **A real BBC, Acorn fileserver, or other Econet peripheral:** `PiconetBackend` with a Piconet device on the wire. The wire's clock generator and termination must be present (the Piconet is a participant, not a clock source).
 - **Testing only:** `TestBackend` (or the test fakes `MockPiconetSerial`, `FakePiconetDevice`, `FakePiconetDeviceOnPty`, `AunBridgePiconetDevice` in `tests/piconet/`). The Piconet integration's test stack is described in `docs/discussion/piconet-feasibility.md` ("Testing Strategy" section).
 

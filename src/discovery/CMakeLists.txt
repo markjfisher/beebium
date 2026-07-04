@@ -33,17 +33,17 @@ if(APPLE)
     # dns_sd.h is a system framework on macOS, no extra linking needed
     # The symbols are in libSystem
 elseif(WIN32)
-    # Windows 10 1903+ (SDK 10.0.18362.0) required for DnsServiceRegister.
-    # The browse-side counterpart (DnsServiceBrowse / DnsServiceResolve
-    # for AUN peer discovery) is not yet implemented; Windows falls back
-    # to NullBrowser. Tracked in the AUN peer-discovery work for a
-    # future iteration.
+    # Windows 10 1903+ (SDK 10.0.18362.0) required for the DnsService* mDNS
+    # APIs. The advertiser uses DnsServiceRegister; the browser uses
+    # DnsServiceBrowse + DnsServiceResolve for AUN peer discovery.
     target_sources(beebium_discovery PRIVATE
         src/WindowsAdvertiser.cpp
+        src/WindowsBrowser.cpp
     )
     target_link_libraries(beebium_discovery PRIVATE dnsapi)
     target_compile_definitions(beebium_discovery PRIVATE
         BEEBIUM_HAS_WINDOWS_MDNS
+        BEEBIUM_HAS_WINDOWS_MDNS_BROWSE
         _WIN32_WINNT=0x0A00
         WINVER=0x0A00
     )
