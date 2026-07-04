@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import inspect
 from abc import ABC
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, ClassVar, Self
 
 import stevedore
@@ -95,6 +96,14 @@ class ExtensionAdapter(ABC):
     def _invoke_bytes(self, service: str, method: str, payload: bytes) -> bytes:
         """Unary call routed to this adapter's instance. Returns reply bytes."""
         return self._channel.invoke(
+            service, method, payload, extension_id=self._extension_id
+        )
+
+    def _server_stream_bytes(
+        self, service: str, method: str, payload: bytes
+    ) -> Iterator[bytes]:
+        """Server-streaming call routed to this instance. Yields reply bytes."""
+        yield from self._channel.server_stream(
             service, method, payload, extension_id=self._extension_id
         )
 

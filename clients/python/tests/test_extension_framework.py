@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from beebium.acorn_rtc import AcornRtc
+from beebium.acorn_scsi import AcornScsi
 from beebium.aun import Aun
 from beebium.client import Beebium
 from beebium.exceptions import (
@@ -46,6 +48,8 @@ _FIRST_PARTY = {
     "piconet": Piconet,
     "rpc-serial": RpcSerial,
     "host-serial": HostSerial,
+    "acorn-rtc": AcornRtc,
+    "acorn-scsi": AcornScsi,
 }
 
 

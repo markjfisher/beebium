@@ -66,6 +66,8 @@ aun = "beebium.aun:Aun"
 piconet = "beebium.piconet:Piconet"
 rpc-serial = "beebium.rpc_serial:RpcSerial"
 host-serial = "beebium.host_serial:HostSerial"
+acorn-rtc = "beebium.acorn_rtc:AcornRtc"
+acorn-scsi = "beebium.acorn_scsi:AcornScsi"
 
 [project.urls]
 Homepage = "https://github.com/rob-smallshire/beebium"
