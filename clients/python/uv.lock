@@ -12,11 +12,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "grpcio-tools" },
-    { name = "pytest" },
-    { name = "pytest-timeout" },
-]
 discovery = [
     { name = "zeroconf" },
 ]
@@ -24,17 +19,36 @@ imaging = [
     { name = "pillow" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "grpcio-tools" },
+    { name = "pytest" },
+    { name = "pytest-timeout" },
+]
+test = [
+    { name = "pytest" },
+    { name = "pytest-timeout" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "grpcio", specifier = ">=1.60.0" },
-    { name = "grpcio-tools", marker = "extra == 'dev'", specifier = ">=1.60.0" },
     { name = "pillow", marker = "extra == 'imaging'", specifier = ">=10.0.0" },
     { name = "protobuf", specifier = ">=4.25.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.0.0" },
     { name = "zeroconf", marker = "extra == 'discovery'", specifier = ">=0.131.0" },
 ]
-provides-extras = ["dev", "imaging", "discovery"]
+provides-extras = ["imaging", "discovery"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "grpcio-tools", specifier = ">=1.60.0" },
+    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "pytest-timeout", specifier = ">=2.0.0" },
+]
+test = [
+    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "pytest-timeout", specifier = ">=2.0.0" },
+]
 
 [[package]]
 name = "colorama"

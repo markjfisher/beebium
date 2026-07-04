@@ -37,20 +37,33 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 echo "==> Building wheel"
 rm -rf dist
 uv build --wheel
-WHEEL="$(ls "$CLIENT_DIR"/dist/*.whl)"
+# dist/ is emptied above, so exactly one wheel matches; head -n1 is belt-and-braces.
+WHEEL="$(ls "$CLIENT_DIR"/dist/*.whl | head -n 1)"
 echo "    built $(basename "$WHEEL")"
 
 echo "==> Creating a fresh virtualenv at $WORK_DIR/venv"
+# A brand-new venv (NOT the project .venv) so the only thing under test is the
+# built wheel and its declared dependencies -- no editable source install can
+# shadow it.
 uv venv "$WORK_DIR/venv"
 VENV_PYTHON="$WORK_DIR/venv/bin/python"
 [[ -x "$VENV_PYTHON" ]] || VENV_PYTHON="$WORK_DIR/venv/Scripts/python.exe"  # Windows
 
-echo "==> Installing the wheel (with the dev extra) into the fresh venv"
-uv pip install --python "$VENV_PYTHON" "${WHEEL}[dev]"
+echo "==> Installing the built wheel (product) into the fresh venv"
+uv pip install --python "$VENV_PYTHON" "$WHEEL"
+
+echo "==> Installing the test runner from the 'test' dependency-group"
+# Export just the test group (pytest + pytest-timeout; no project, no codegen
+# tooling) and install it alongside the wheel. Single source of truth -- the
+# runner deps are never duplicated in this script.
+uv export --only-group test --no-hashes --no-emit-project -o "$WORK_DIR/test-requirements.txt"
+uv pip install --python "$VENV_PYTHON" -r "$WORK_DIR/test-requirements.txt"
 
 echo "==> Running packaging tests against the INSTALLED wheel (cwd outside src/)"
-# Run from WORK_DIR, passing the absolute test path, so `import beebium`
-# resolves from site-packages -- never from ./src.
+# Invoke the venv's pytest DIRECTLY (not `uv run`, which would sync the project
+# environment and reinstall beebium from source, shadowing the wheel). Run from
+# WORK_DIR with an absolute test path so `import beebium` resolves from
+# site-packages, never from ./src.
 cd "$WORK_DIR"
 "$VENV_PYTHON" -m pytest "$CLIENT_DIR/tests_packaging" -v
 

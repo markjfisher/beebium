@@ -26,17 +26,31 @@ dependencies = [
     "protobuf>=4.25.0",
 ]
 
+# Runtime-optional features are published extras (installable by end users).
+# Development tooling lives in dependency-groups (below), NOT in extras, so it
+# is never published in the wheel's metadata -- `pip install beebium[...]` only
+# ever pulls real runtime features.
 [project.optional-dependencies]
-dev = [
-    "grpcio-tools>=1.60.0",
-    "pytest>=7.0.0",
-    "pytest-timeout>=2.0.0",
-]
 imaging = [
     "Pillow>=10.0.0",
 ]
 discovery = [
     "zeroconf>=0.131.0",
+]
+
+# PEP 735 dependency-groups: local development tooling, kept out of published
+# metadata. `uv run`/`uv sync` install the `dev` group by default. The `test`
+# group is split out so the wheel-packaging harness (scripts/test-wheel.sh) can
+# `uv export --only-group test` to install just the test runner into the fresh
+# venv alongside the built wheel -- no codegen tooling needed there.
+[dependency-groups]
+test = [
+    "pytest>=7.0.0",
+    "pytest-timeout>=2.0.0",
+]
+dev = [
+    { include-group = "test" },
+    "grpcio-tools>=1.60.0",
 ]
 
 [project.entry-points.pytest11]

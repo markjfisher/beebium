@@ -18,11 +18,15 @@ cd clients/python
 # Run anything in the project environment (uv creates it on first use):
 uv run python examples/serial_demo.py --port 50071
 
-# Run the test suite (the `dev` extra pulls in pytest + grpcio-tools):
-uv run --extra dev python -m pytest
+# Run the test suite. Development tooling (pytest, grpcio-tools) lives in the
+# `dev` dependency-group, which uv installs by default -- no extra flags:
+uv run python -m pytest
 
-# Or materialise a .venv you can activate:
-uv sync --extra dev
+# Build the wheel and run the packaging tests against it in a fresh venv:
+bash scripts/test-wheel.sh
+
+# Or materialise a .venv you can activate (the dev group is included by default):
+uv sync
 ```
 
 No `pip` is required, and nothing is installed into your system Python.
@@ -36,16 +40,20 @@ virtualenv:
 cd clients/python
 python -m venv .venv
 . .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e .                 # the client
+pip install --group dev          # dev tooling (pip >= 25.1); or just use uv
 ```
 
 ### From PyPI
 
 ```bash
 pip install beebium            # core client
-pip install beebium[dev]       # + grpcio-tools for proto generation
 pip install beebium[imaging]   # + Pillow for image capture
+pip install beebium[discovery] # + zeroconf for mDNS server discovery
 ```
+
+Development tooling is not a published extra -- contributors get it from the
+`dev` dependency-group via uv (above).
 
 On a PEP 668 system, run these inside a virtualenv (above) or via
 `uv pip install` / `pipx`.

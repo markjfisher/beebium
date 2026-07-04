@@ -844,7 +844,7 @@ jobs:
         # --durations=0 lists every test's wall-clock time (slowest first) so we
         # have data on which integration tests are genuinely long; --timeout=600
         # fails a hung test after 10 min rather than stalling the job.
-        run: uv run --with pytest --with pytest-timeout python -m pytest tests/ -v --durations=0 --timeout=600
+        run: uv run python -m pytest tests/ -v --durations=0 --timeout=600
 
   python-integration-linux:
     name: Python Client Integration Tests (Linux)
@@ -887,7 +887,7 @@ jobs:
         # --durations=0 lists every test's wall-clock time (slowest first) so we
         # have data on which integration tests are genuinely long; --timeout=600
         # fails a hung test after 10 min rather than stalling the job.
-        run: uv run --with pytest --with pytest-timeout python -m pytest tests/ -v --durations=0 --timeout=600
+        run: uv run python -m pytest tests/ -v --durations=0 --timeout=600
 
   python-integration-windows:
     name: Python Client Integration Tests (Windows)
@@ -922,7 +922,7 @@ jobs:
         # --durations=0 lists every test's wall-clock time (slowest first) so we
         # have data on which integration tests are genuinely long; --timeout=600
         # fails a hung test after 10 min rather than stalling the job.
-        run: uv run --with pytest --with pytest-timeout python -m pytest tests/ -v --durations=0 --timeout=600
+        run: uv run python -m pytest tests/ -v --durations=0 --timeout=600
 
   python-integration-macos-arm64:
     name: Python Client Integration Tests (macOS arm64)
@@ -960,7 +960,7 @@ jobs:
         # --durations=0 lists every test's wall-clock time (slowest first) so we
         # have data on which integration tests are genuinely long; --timeout=600
         # fails a hung test after 10 min rather than stalling the job.
-        run: uv run --with pytest --with pytest-timeout python -m pytest tests/ -v --durations=0 --timeout=600
+        run: uv run python -m pytest tests/ -v --durations=0 --timeout=600
 
   python-integration-macos-x86_64:
     name: Python Client Integration Tests (macOS x86_64)
@@ -998,4 +998,4 @@ jobs:
         # --durations=0 lists every test's wall-clock time (slowest first) so we
         # have data on which integration tests are genuinely long; --timeout=600
         # fails a hung test after 10 min rather than stalling the job.
-        run: uv run --with pytest --with pytest-timeout python -m pytest tests/ -v --durations=0 --timeout=600
+        run: uv run python -m pytest tests/ -v --durations=0 --timeout=600

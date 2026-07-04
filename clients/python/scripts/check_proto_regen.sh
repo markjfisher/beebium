@@ -27,8 +27,8 @@ PROTO_OUT_DIR="src/beebium/_proto"
 
 cd "$CLIENT_DIR"
 
-echo "Regenerating proto stubs with the pinned toolchain (uv --extra dev)..."
-uv run --extra dev bash scripts/generate_proto.sh
+echo "Regenerating proto stubs with the locked toolchain (uv default dev group)..."
+uv run bash scripts/generate_proto.sh
 
 echo "Checking that regeneration was a no-op..."
 if ! git diff --quiet -- "$PROTO_OUT_DIR"; then
