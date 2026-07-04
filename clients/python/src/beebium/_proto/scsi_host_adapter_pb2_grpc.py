@@ -15,7 +15,7 @@
 import grpc
 import warnings
 
-from beebium._proto import scsi_host_adapter_pb2 as scsi__host__adapter__pb2
+from . import scsi_host_adapter_pb2 as scsi__host__adapter__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__

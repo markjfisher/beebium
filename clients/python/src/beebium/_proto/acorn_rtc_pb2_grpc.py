@@ -15,7 +15,7 @@
 import grpc
 import warnings
 
-from beebium._proto import acorn_rtc_pb2 as acorn__rtc__pb2
+from . import acorn_rtc_pb2 as acorn__rtc__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__

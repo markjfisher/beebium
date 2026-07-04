@@ -37,6 +37,8 @@ python -m grpc_tools.protoc \
     -I "$EXTENSIONS_DIR/piconet" \
     -I "$EXTENSIONS_DIR/rpc-serial" \
     -I "$EXTENSIONS_DIR/host-serial" \
+    -I "$EXTENSIONS_DIR/acorn-rtc" \
+    -I "$EXTENSIONS_DIR/acorn-scsi" \
     --python_out="$OUT_DIR" \
     --grpc_python_out="$OUT_DIR" \
     "$PROTO_DIR/video.proto" \
@@ -51,11 +53,15 @@ python -m grpc_tools.protoc \
     "$PROTO_DIR/indicator.proto" \
     "$PROTO_DIR/sideways.proto" \
     "$PROTO_DIR/extension_rpc.proto" \
+    "$PROTO_DIR/peripheral_extension.proto" \
+    "$PROTO_DIR/tube.proto" \
     "$EXTENSION_API_PROTO_DIR/extension_ui.proto" \
     "$EXTENSIONS_DIR/aun/aun.proto" \
     "$EXTENSIONS_DIR/piconet/piconet_service.proto" \
     "$EXTENSIONS_DIR/rpc-serial/rpc_serial.proto" \
-    "$EXTENSIONS_DIR/host-serial/host_serial.proto"
+    "$EXTENSIONS_DIR/host-serial/host_serial.proto" \
+    "$EXTENSIONS_DIR/acorn-rtc/acorn_rtc.proto" \
+    "$EXTENSIONS_DIR/acorn-scsi/scsi_host_adapter.proto"
 
 # Fix imports in generated files to use relative imports
 # The generated code uses absolute imports which don't work with src layout
