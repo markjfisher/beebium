@@ -17,6 +17,7 @@ from __future__ import annotations
 import grpc
 
 from beebium._proto import (
+    audio_pb2_grpc,
     debugger_pb2_grpc,
     disc_pb2_grpc,
     econet_pb2_grpc,
@@ -25,6 +26,7 @@ from beebium._proto import (
     extension_ui_pb2_grpc,
     indicator_pb2_grpc,
     keyboard_pb2_grpc,
+    peripheral_extension_pb2_grpc,
     serial_pb2_grpc,
     sideways_pb2_grpc,
     system_pb2_grpc,
@@ -69,6 +71,10 @@ class Connection:
         self._system_stub: system_pb2_grpc.SystemServiceStub | None = None
         self._tube_stub: tube_pb2_grpc.TubeServiceStub | None = None
         self._video_stub: video_pb2_grpc.VideoServiceStub | None = None
+        self._audio_stub: audio_pb2_grpc.AudioServiceStub | None = None
+        self._peripheral_extension_stub: (
+            peripheral_extension_pb2_grpc.PeripheralExtensionServiceStub | None
+        ) = None
 
         self._connect(timeout)
 
@@ -105,6 +111,10 @@ class Connection:
         self._system_stub = system_pb2_grpc.SystemServiceStub(self._channel)
         self._tube_stub = tube_pb2_grpc.TubeServiceStub(self._channel)
         self._video_stub = video_pb2_grpc.VideoServiceStub(self._channel)
+        self._audio_stub = audio_pb2_grpc.AudioServiceStub(self._channel)
+        self._peripheral_extension_stub = (
+            peripheral_extension_pb2_grpc.PeripheralExtensionServiceStub(self._channel)
+        )
 
     @property
     def target(self) -> str:
@@ -221,6 +231,22 @@ class Connection:
             raise ConnectionError("Not connected")
         return self._tube_stub
 
+    @property
+    def audio_stub(self) -> audio_pb2_grpc.AudioServiceStub:
+        """The AudioService stub (sample streaming and format)."""
+        if self._audio_stub is None:
+            raise ConnectionError("Not connected")
+        return self._audio_stub
+
+    @property
+    def peripheral_extension_stub(
+        self,
+    ) -> peripheral_extension_pb2_grpc.PeripheralExtensionServiceStub:
+        """The PeripheralExtensionService stub (loaded-extension discovery)."""
+        if self._peripheral_extension_stub is None:
+            raise ConnectionError("Not connected")
+        return self._peripheral_extension_stub
+
     def close(self) -> None:
         """Close the connection."""
         if self._channel is not None:
@@ -239,6 +265,8 @@ class Connection:
             self._system_stub = None
             self._tube_stub = None
             self._video_stub = None
+            self._audio_stub = None
+            self._peripheral_extension_stub = None
 
     def __enter__(self) -> Connection:
         return self

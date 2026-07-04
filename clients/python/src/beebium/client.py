@@ -34,8 +34,10 @@ from beebium.cpu import CPU
 from beebium.crtc import Crtc
 from beebium.debugger import Debugger
 from beebium.disc import Disc
+from beebium.audio import Audio
 from beebium.aun import Aun
 from beebium.econet import Econet
+from beebium.extensions import Extensions
 from beebium.econet_transport import EconetTransport
 from beebium.extension_rpc import ExtensionChannel
 from beebium.host_serial import HostSerial
@@ -123,6 +125,8 @@ class Beebium:
         self._sideways: Sideways | None = None
         self._tube: Tube | None = None
         self._tube_ula: TubeUlaInspection | None = None
+        self._audio: Audio | None = None
+        self._extensions: Extensions | None = None
 
     @classmethod
     def _from_parasite_stub(cls, connection: Connection) -> Beebium:
@@ -274,6 +278,22 @@ class Beebium:
         if self._video is None:
             self._video = Video(self._connection.video_stub)
         return self._video
+
+    @property
+    def audio(self) -> Audio:
+        """Access audio format and sample streaming."""
+        if self._audio is None:
+            self._audio = Audio(self._connection.audio_stub)
+        return self._audio
+
+    @property
+    def extensions(self) -> Extensions:
+        """Discover the peripheral extensions the server has loaded."""
+        if self._extensions is None:
+            self._extensions = Extensions(
+                self._connection.peripheral_extension_stub
+            )
+        return self._extensions
 
     @property
     def memory(self) -> Memory:

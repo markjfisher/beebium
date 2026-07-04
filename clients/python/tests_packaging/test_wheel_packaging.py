@@ -84,6 +84,21 @@ def test_generated_proto_stubs_are_shipped(module_name: str):
     assert module is not None
 
 
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "beebium.audio",
+        "beebium.extensions",
+        "beebium.client",
+        "beebium.connection",
+    ],
+)
+def test_client_modules_are_shipped(module_name: str):
+    """Hand-written client modules (not just generated stubs) are packaged."""
+    module = importlib.import_module(module_name)
+    assert module is not None
+
+
 def test_peripheral_extension_service_stub_present():
     """The discovery service stub (new in this branch) is importable."""
     from beebium._proto import peripheral_extension_pb2_grpc as grpc_mod

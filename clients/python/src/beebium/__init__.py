@@ -27,8 +27,22 @@ Usage:
         bbc.keyboard.press_return()
 """
 
+from beebium.audio import (
+    AudioChunk,
+    AudioFormat,
+    AudioSource,
+    ChannelGroup,
+    SourceEncoding,
+)
 from beebium.aun import AunStatus, PeerInfo, PeerSource
 from beebium.client import Beebium
+from beebium.extensions import (
+    ExtensionInfo,
+    Extensions,
+    ParameterSchemaInfo,
+    StorageDevice,
+    StorageKind,
+)
 from beebium.econet import (
     AdlcStatus,
     EconetStatus,
@@ -84,13 +98,19 @@ DEFAULT_GRPC_PORT = 0xBEEB
 __all__ = [
     "AdlcStatus",
     "AdvertisementState",
+    "AudioChunk",
+    "AudioFormat",
+    "AudioSource",
     "AunStatus",
     "Beebium",
     "BeebiumError",
     "Button",
+    "ChannelGroup",
     "Choice",
     "ConnectionError",
     "Control",
+    "ExtensionInfo",
+    "Extensions",
     "PROTOCOL_FINGERPRINT",
     "ProtocolMismatchError",
     "ControlKind",
@@ -107,6 +127,7 @@ __all__ = [
     "Label",
     "MachineIdentity",
     "MemoryAccessError",
+    "ParameterSchemaInfo",
     "PeerInfo",
     "PeerSource",
     "PiconetStatus",
@@ -118,6 +139,9 @@ __all__ = [
     "ShutdownConditionStatus",
     "ShutdownMode",
     "ShutdownResponse",
+    "SourceEncoding",
+    "StorageDevice",
+    "StorageKind",
     "SubscriptionHandle",
     "TextInput",
     "TimeoutError",
