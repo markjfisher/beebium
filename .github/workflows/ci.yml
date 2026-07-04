@@ -5,7 +5,12 @@ on:
     # Branches only. Tag pushes (v*) are handled by release.yml; running the full
     # CI build on every release-tag (re-)point just starves the release jobs of
     # the scarce Windows/macOS runners.
-    tags-ignore:
+    #
+    # This MUST be a branches filter, not tags-ignore: a push trigger that names
+    # only tags/tags-ignore (and no branches) does not run on branch pushes at
+    # all, which silently disabled CI on master. A branches filter runs on every
+    # branch push and never on tag pushes, which is exactly the intent.
+    branches:
       - "**"
   pull_request:
   schedule:
