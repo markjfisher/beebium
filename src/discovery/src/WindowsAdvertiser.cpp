@@ -233,7 +233,10 @@ private:
     }
 };
 
-std::unique_ptr<Advertiser> create_advertiser() {
+// The Windows factory (WindowsDiscovery.cpp) decides between this native
+// DnsService advertiser and the Bonjour advertiser at run time, so this file
+// exposes a maker rather than defining create_advertiser() directly.
+std::unique_ptr<Advertiser> make_windows_native_advertiser() {
     return std::make_unique<WindowsAdvertiser>();
 }
 

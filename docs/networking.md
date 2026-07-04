@@ -92,7 +92,11 @@ The TXT record schema, the rationale for the vendor-neutral service type, and th
 
 - macOS — full support via Bonjour (`dns_sd.h`): both advertises and browses.
 - Linux — advertises via `AvahiAdvertiser` (libavahi-client, loaded at runtime with `dlopen`) but does not yet browse (`NullBrowser` fallback). So a Linux server publishes its `_aun._udp` announcement and peers can discover it, but the Linux server cannot itself discover peers — supply `map=` for the outbound direction. Requires a running `avahi-daemon`; where Avahi is absent the advertiser degrades silently to a no-op. A real `AvahiBrowser` using `avahi-client` browse is the obvious follow-up.
-- Windows — advertises via `DnsServiceRegister` **and** browses via `WindowsBrowser` (`DnsServiceBrowse` + `DnsServiceResolve`), so a Windows server both publishes and discovers `_aun._udp` peers with no manual `map=` needed. Requires Windows 10 1903+ (the DnsService* mDNS APIs).
+- Windows — full bidirectional discovery (publishes and discovers `_aun._udp` peers, no manual `map=` needed), with a provider chosen at run time:
+  - **Apple Bonjour** (`dnssd.dll`) when it is installed (iTunes, Adobe apps, etc. bundle it). Bonjour takes over the mDNS responder (UDP 5353), so where present it is preferred; it exposes the same `dns_sd.h` API the macOS advertiser/browser use, resolved at run time via `GetProcAddress` (no Bonjour SDK needed to build).
+  - **Native `windns.h`** (`DnsServiceRegister` / `DnsServiceBrowse` / `DnsServiceResolve`) otherwise. Requires Windows 10 1903+; always present, so there is always a provider.
+
+  Note: on a machine with Bonjour installed the native path may be unable to register (Bonjour owns 5353), which is exactly why the Bonjour provider is preferred when available.
 
 **Future improvements:**
 

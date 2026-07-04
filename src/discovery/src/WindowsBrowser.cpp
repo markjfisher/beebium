@@ -372,7 +372,10 @@ private:
     }
 };
 
-std::unique_ptr<Browser> create_browser() {
+// The Windows factory (WindowsDiscovery.cpp) decides between this native
+// DnsService browser and the Bonjour browser at run time, so this file exposes
+// a maker rather than defining create_browser() directly.
+std::unique_ptr<Browser> make_windows_native_browser() {
     return std::make_unique<WindowsBrowser>();
 }
 

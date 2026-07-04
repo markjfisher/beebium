@@ -10,15 +10,20 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#ifdef BEEBIUM_HAS_BONJOUR_BROWSE
+#if defined(BEEBIUM_HAS_BONJOUR_BROWSE) || defined(BEEBIUM_HAS_BONJOUR_BROWSE_DYNAMIC)
 
 #include <beebium/discovery/Browser.hpp>
 
-#include <dns_sd.h>
+#include "DnssdApi.hpp"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/select.h>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -28,6 +33,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace beebium::discovery {
 
@@ -62,7 +68,16 @@ public:
             instances_.clear();
         }
 
-        DNSServiceErrorType err = DNSServiceBrowse(
+#ifdef _WIN32
+        if (!wsa_inited_) {
+            WSADATA wsa_data;
+            if (WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0) {
+                wsa_inited_ = true;
+            }
+        }
+#endif
+
+        DNSServiceErrorType err = dnssd_api()->DNSServiceBrowse(
             &browse_ref_,
             0,                                // flags
             kDNSServiceInterfaceIndexAny,
@@ -86,7 +101,7 @@ public:
         running_ = false;
 
         if (browse_ref_) {
-            DNSServiceRefDeallocate(browse_ref_);
+            dnssd_api()->DNSServiceRefDeallocate(browse_ref_);
             browse_ref_ = nullptr;
         }
 
@@ -98,16 +113,23 @@ public:
         std::lock_guard lock(mutex_);
         for (auto& [name, inst] : instances_) {
             if (inst.resolve_ref) {
-                DNSServiceRefDeallocate(inst.resolve_ref);
+                dnssd_api()->DNSServiceRefDeallocate(inst.resolve_ref);
                 inst.resolve_ref = nullptr;
             }
             if (inst.addr_ref) {
-                DNSServiceRefDeallocate(inst.addr_ref);
+                dnssd_api()->DNSServiceRefDeallocate(inst.addr_ref);
                 inst.addr_ref = nullptr;
             }
         }
         instances_.clear();
         browsing_ = false;
+
+#ifdef _WIN32
+        if (wsa_inited_) {
+            WSACleanup();
+            wsa_inited_ = false;
+        }
+#endif
     }
 
     BrowserState state() const override {
@@ -132,6 +154,12 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<bool> browsing_{false};
     std::thread event_thread_;
+#ifdef _WIN32
+    // Our event_loop() calls select() on the DNS-SD sockets directly, which
+    // requires Winsock to be initialised in this process. Refcounted, so this
+    // is safe even when the host app already called WSAStartup.
+    bool wsa_inited_ = false;
+#endif
 
     mutable std::mutex mutex_;
     BrowserCallbacks callbacks_;
@@ -148,7 +176,7 @@ private:
             int max_fd = -1;
 
             if (browse_ref_) {
-                int fd = DNSServiceRefSockFD(browse_ref_);
+                int fd = static_cast<int>(dnssd_api()->DNSServiceRefSockFD(browse_ref_));
                 if (fd >= 0) {
                     FD_SET(fd, &readfds);
                     if (fd > max_fd) max_fd = fd;
@@ -162,7 +190,7 @@ private:
                 std::lock_guard lock(mutex_);
                 for (auto& [name, inst] : instances_) {
                     if (inst.resolve_ref) {
-                        int fd = DNSServiceRefSockFD(inst.resolve_ref);
+                        int fd = static_cast<int>(dnssd_api()->DNSServiceRefSockFD(inst.resolve_ref));
                         if (fd >= 0) {
                             FD_SET(fd, &readfds);
                             if (fd > max_fd) max_fd = fd;
@@ -170,7 +198,7 @@ private:
                         }
                     }
                     if (inst.addr_ref) {
-                        int fd = DNSServiceRefSockFD(inst.addr_ref);
+                        int fd = static_cast<int>(dnssd_api()->DNSServiceRefSockFD(inst.addr_ref));
                         if (fd >= 0) {
                             FD_SET(fd, &readfds);
                             if (fd > max_fd) max_fd = fd;
@@ -193,8 +221,8 @@ private:
             if (n <= 0) continue;
 
             if (browse_ref_ &&
-                FD_ISSET(DNSServiceRefSockFD(browse_ref_), &readfds)) {
-                DNSServiceProcessResult(browse_ref_);
+                FD_ISSET(dnssd_api()->DNSServiceRefSockFD(browse_ref_), &readfds)) {
+                dnssd_api()->DNSServiceProcessResult(browse_ref_);
                 if (!running_) break;
             }
 
@@ -213,7 +241,7 @@ private:
             }
             for (auto& [ref, fd] : aux_refs) {
                 if (FD_ISSET(fd, &readfds) && live.count(ref)) {
-                    DNSServiceProcessResult(ref);
+                    dnssd_api()->DNSServiceProcessResult(ref);
                     if (!running_) break;
                 }
             }
@@ -229,7 +257,7 @@ private:
                 std::lock_guard lock(mutex_);
                 for (auto& [name, inst] : instances_) {
                     if (inst.announced && inst.addr_ref) {
-                        DNSServiceRefDeallocate(inst.addr_ref);
+                        dnssd_api()->DNSServiceRefDeallocate(inst.addr_ref);
                         inst.addr_ref = nullptr;
                     }
                 }
@@ -277,7 +305,7 @@ private:
         }
 
         DNSServiceRef ref = nullptr;
-        DNSServiceErrorType err = DNSServiceResolve(
+        DNSServiceErrorType err = dnssd_api()->DNSServiceResolve(
             &ref,
             0,
             interfaceIndex,
@@ -294,7 +322,7 @@ private:
             // Raced with another Add for the same instance between the
             // check above and now; drop this duplicate rather than
             // leaking or replacing the in-flight ref.
-            DNSServiceRefDeallocate(ref);
+            dnssd_api()->DNSServiceRefDeallocate(ref);
             return;
         }
         inst.resolve_ref = ref;
@@ -310,10 +338,10 @@ private:
             if (it == instances_.end()) return;
             announced = it->second.announced;
             if (it->second.resolve_ref) {
-                DNSServiceRefDeallocate(it->second.resolve_ref);
+                dnssd_api()->DNSServiceRefDeallocate(it->second.resolve_ref);
             }
             if (it->second.addr_ref) {
-                DNSServiceRefDeallocate(it->second.addr_ref);
+                dnssd_api()->DNSServiceRefDeallocate(it->second.addr_ref);
             }
             instances_.erase(it);
             cbs = callbacks_;
@@ -325,7 +353,7 @@ private:
 
     static void resolve_callback(DNSServiceRef sdRef,
                                  DNSServiceFlags /*flags*/,
-                                 uint32_t interfaceIndex,
+                                 uint32_t /*interfaceIndex*/,
                                  DNSServiceErrorType errorCode,
                                  const char* fullname,
                                  const char* hosttarget,
@@ -357,12 +385,12 @@ private:
         }
 
         std::map<std::string, std::string> txt;
-        uint16_t count = TXTRecordGetCount(txtLen, txtRecord);
+        uint16_t count = dnssd_api()->TXTRecordGetCount(txtLen, txtRecord);
         for (uint16_t i = 0; i < count; ++i) {
             char key[256];
             uint8_t value_len = 0;
             const void* value_ptr = nullptr;
-            DNSServiceErrorType e = TXTRecordGetItemAtIndex(
+            DNSServiceErrorType e = dnssd_api()->TXTRecordGetItemAtIndex(
                 txtLen, txtRecord, i, sizeof(key), key, &value_len, &value_ptr);
             if (e != kDNSServiceErr_NoError) continue;
             std::string value;
@@ -388,7 +416,7 @@ private:
         // whichever interface actually has the record, which is what we
         // want -- we only need one reachable address for the UDP peer.
         DNSServiceRef addr_ref = nullptr;
-        DNSServiceErrorType ae = DNSServiceGetAddrInfo(
+        DNSServiceErrorType ae = dnssd_api()->DNSServiceGetAddrInfo(
             &addr_ref,
             0,
             kDNSServiceInterfaceIndexAny,
@@ -408,11 +436,11 @@ private:
         it->second.service.port = ntohs(port);
         it->second.service.txt_records = std::move(txt);
         if (it->second.resolve_ref == sdRef) {
-            DNSServiceRefDeallocate(it->second.resolve_ref);
+            dnssd_api()->DNSServiceRefDeallocate(it->second.resolve_ref);
             it->second.resolve_ref = nullptr;
         }
         if (it->second.addr_ref) {
-            DNSServiceRefDeallocate(it->second.addr_ref);
+            dnssd_api()->DNSServiceRefDeallocate(it->second.addr_ref);
         }
         it->second.addr_ref = addr_ref;
     }
@@ -480,10 +508,19 @@ private:
     }
 };
 
-std::unique_ptr<Browser> create_browser() {
+std::unique_ptr<Browser> make_bonjour_browser() {
     return std::make_unique<BonjourBrowser>();
 }
 
+#ifdef BEEBIUM_HAS_BONJOUR_BROWSE
+// On macOS the Bonjour browser is the only provider, so it is the factory. On
+// Windows the factory (WindowsDiscovery.cpp) chooses between Bonjour and the
+// native DnsService browser at run time and calls make_bonjour_browser().
+std::unique_ptr<Browser> create_browser() {
+    return make_bonjour_browser();
+}
+#endif
+
 }  // namespace beebium::discovery
 
-#endif  // BEEBIUM_HAS_BONJOUR_BROWSE
+#endif  // BEEBIUM_HAS_BONJOUR_BROWSE || BEEBIUM_HAS_BONJOUR_BROWSE_DYNAMIC

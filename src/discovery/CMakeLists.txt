@@ -25,6 +25,7 @@ if(APPLE)
     target_sources(beebium_discovery PRIVATE
         src/BonjourAdvertiser.cpp
         src/BonjourBrowser.cpp
+        src/DnssdApi.cpp
     )
     target_compile_definitions(beebium_discovery PRIVATE
         BEEBIUM_HAS_BONJOUR
@@ -33,17 +34,30 @@ if(APPLE)
     # dns_sd.h is a system framework on macOS, no extra linking needed
     # The symbols are in libSystem
 elseif(WIN32)
-    # Windows 10 1903+ (SDK 10.0.18362.0) required for the DnsService* mDNS
-    # APIs. The advertiser uses DnsServiceRegister; the browser uses
-    # DnsServiceBrowse + DnsServiceResolve for AUN peer discovery.
+    # Windows has two possible mDNS providers, selected at run time in
+    # WindowsDiscovery.cpp (see its comment):
+    #  - Native DnsService* APIs (windns.h): Windows 10 1903+, always present.
+    #  - Apple Bonjour (dnssd.dll): reuses the same dns_sd.h advertiser/browser
+    #    as macOS, resolved at run time via GetProcAddress (DnssdApi.cpp) so no
+    #    Bonjour SDK is needed to build and it degrades gracefully when absent.
+    #    A trimmed dns_sd.h is vendored under third_party/ for the declarations.
     target_sources(beebium_discovery PRIVATE
         src/WindowsAdvertiser.cpp
         src/WindowsBrowser.cpp
+        src/BonjourAdvertiser.cpp
+        src/BonjourBrowser.cpp
+        src/DnssdApi.cpp
+        src/WindowsDiscovery.cpp
     )
-    target_link_libraries(beebium_discovery PRIVATE dnsapi)
+    target_include_directories(beebium_discovery PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    )
+    target_link_libraries(beebium_discovery PRIVATE dnsapi ws2_32)
     target_compile_definitions(beebium_discovery PRIVATE
         BEEBIUM_HAS_WINDOWS_MDNS
         BEEBIUM_HAS_WINDOWS_MDNS_BROWSE
+        BEEBIUM_HAS_BONJOUR_DYNAMIC
+        BEEBIUM_HAS_BONJOUR_BROWSE_DYNAMIC
         _WIN32_WINNT=0x0A00
         WINVER=0x0A00
     )

@@ -10,11 +10,11 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#ifdef BEEBIUM_HAS_BONJOUR
+#if defined(BEEBIUM_HAS_BONJOUR) || defined(BEEBIUM_HAS_BONJOUR_DYNAMIC)
 
 #include <beebium/discovery/Advertiser.hpp>
 
-#include <dns_sd.h>
+#include "DnssdApi.hpp"
 
 #include <atomic>
 #include <mutex>
@@ -36,6 +36,11 @@ public:
         // Stop any existing advertisement
         stop();
 
+        const DnssdApi* dnssd = dnssd_api();
+        if (!dnssd) {
+            return false;  // DNS-SD runtime not available
+        }
+
         // Store info for state reporting
         {
             std::lock_guard lock(mutex_);
@@ -44,16 +49,16 @@ public:
 
         // Build TXT record
         TXTRecordRef txt_ref;
-        TXTRecordCreate(&txt_ref, 0, nullptr);
+        dnssd->TXTRecordCreate(&txt_ref, 0, nullptr);
 
         for (const auto& [key, value] : info.txt_records) {
-            TXTRecordSetValue(&txt_ref, key.c_str(),
-                              static_cast<uint8_t>(value.size()),
-                              value.c_str());
+            dnssd->TXTRecordSetValue(&txt_ref, key.c_str(),
+                                     static_cast<uint8_t>(value.size()),
+                                     value.c_str());
         }
 
         // Register service
-        DNSServiceErrorType err = DNSServiceRegister(
+        DNSServiceErrorType err = dnssd->DNSServiceRegister(
             &service_ref_,
             0,  // flags
             kDNSServiceInterfaceIndexAny,
@@ -62,12 +67,12 @@ public:
             nullptr,  // domain (default = .local)
             nullptr,  // host (default = this machine)
             htons(info.port),
-            TXTRecordGetLength(&txt_ref),
-            TXTRecordGetBytesPtr(&txt_ref),
+            dnssd->TXTRecordGetLength(&txt_ref),
+            dnssd->TXTRecordGetBytesPtr(&txt_ref),
             register_callback,
             this);
 
-        TXTRecordDeallocate(&txt_ref);
+        dnssd->TXTRecordDeallocate(&txt_ref);
 
         if (err != kDNSServiceErr_NoError) {
             service_ref_ = nullptr;
@@ -87,7 +92,7 @@ public:
 
         // Deallocate service (causes DNSServiceProcessResult to return)
         if (service_ref_) {
-            DNSServiceRefDeallocate(service_ref_);
+            dnssd_api()->DNSServiceRefDeallocate(service_ref_);
             service_ref_ = nullptr;
         }
 
@@ -124,10 +129,11 @@ private:
     std::string actual_name_;
 
     void event_loop() {
+        const DnssdApi* dnssd = dnssd_api();
         while (running_ && service_ref_) {
             // DNSServiceProcessResult blocks until an event is ready
             // or the service ref is deallocated
-            DNSServiceErrorType err = DNSServiceProcessResult(service_ref_);
+            DNSServiceErrorType err = dnssd->DNSServiceProcessResult(service_ref_);
             if (err != kDNSServiceErr_NoError) {
                 // Service was deallocated or error occurred
                 break;
@@ -154,10 +160,20 @@ private:
     }
 };
 
-std::unique_ptr<Advertiser> create_advertiser() {
+std::unique_ptr<Advertiser> make_bonjour_advertiser() {
     return std::make_unique<BonjourAdvertiser>();
 }
 
+#ifdef BEEBIUM_HAS_BONJOUR
+// On macOS the Bonjour advertiser is the only provider, so it is the factory.
+// On Windows the factory (WindowsDiscovery.cpp) chooses between Bonjour and the
+// native DnsService advertiser at run time and calls make_bonjour_advertiser()
+// directly.
+std::unique_ptr<Advertiser> create_advertiser() {
+    return make_bonjour_advertiser();
+}
+#endif
+
 }  // namespace beebium::discovery
 
-#endif  // BEEBIUM_HAS_BONJOUR
+#endif  // BEEBIUM_HAS_BONJOUR || BEEBIUM_HAS_BONJOUR_DYNAMIC

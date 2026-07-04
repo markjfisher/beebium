@@ -64,6 +64,20 @@ TEST_CASE("Browser stop without start is safe", "[browser]") {
     CHECK_FALSE(browser->state().browsing);
 }
 
+TEST_CASE("Advertiser and browser share a backing provider", "[browser][discovery]") {
+    // Guards the factory wiring, including the Windows dual-provider selector
+    // (Bonjour via dnssd.dll when installed, else native DnsService). A machine
+    // that can browse must also be able to advertise -- both are backed by the
+    // same selected provider -- so browser availability implies advertiser
+    // availability. (The converse need not hold: Linux advertises via Avahi but
+    // has no browser yet.)
+    auto advertiser = create_advertiser();
+    auto browser = create_browser();
+    if (browser->state().available) {
+        CHECK(advertiser->state().available);
+    }
+}
+
 TEST_CASE("Browser start when unavailable returns false", "[browser]") {
     auto browser = create_browser();
     if (browser->state().available) {
