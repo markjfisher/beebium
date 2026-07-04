@@ -32,6 +32,8 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -43,6 +45,20 @@
 namespace beebium::discovery {
 
 namespace {
+
+// Set BEEBIUM_MDNS_TRACE=1 to log the native DnsService browse/resolve state
+// machine (and the DNS_STATUS of any failure) to stderr.
+bool mdns_trace_enabled() {
+    static const bool enabled = std::getenv("BEEBIUM_MDNS_TRACE") != nullptr;
+    return enabled;
+}
+#define MDNS_TRACE(...)                                          \
+    do {                                                         \
+        if (mdns_trace_enabled()) {                              \
+            std::fprintf(stderr, "[windns-browser] " __VA_ARGS__); \
+            std::fprintf(stderr, "\n");                          \
+        }                                                        \
+    } while (0)
 
 std::wstring to_wide(const std::string& s) {
     if (s.empty()) return {};
@@ -129,6 +145,9 @@ public:
 
         running_ = true;
         DNS_STATUS status = DnsServiceBrowse(&browse_request_, &browse_cancel_);
+        MDNS_TRACE("DnsServiceBrowse(query=%ls) -> status=%lu (%s)",
+                   query_name_.c_str(), static_cast<unsigned long>(status),
+                   status == DNS_REQUEST_PENDING ? "PENDING" : "error");
         if (status != DNS_REQUEST_PENDING) {
             running_ = false;
             return false;
@@ -218,6 +237,9 @@ private:
                                 PVOID context,
                                 PDNS_RECORD records) {
         auto* self = static_cast<WindowsBrowser*>(context);
+        MDNS_TRACE("browse_callback status=%lu records=%p",
+                   static_cast<unsigned long>(status),
+                   static_cast<void*>(records));
         if (status == ERROR_CANCELLED) {
             // The single terminal callback delivered after
             // DnsServiceBrowseCancel. Release stop()'s wait; touch nothing
@@ -277,6 +299,9 @@ private:
 
             DNS_STATUS status =
                 DnsServiceResolve(&op_raw->request, &op_raw->cancel);
+            MDNS_TRACE("DnsServiceResolve(%ls) -> status=%lu (%s)",
+                       name.c_str(), static_cast<unsigned long>(status),
+                       status == DNS_REQUEST_PENDING ? "PENDING" : "error");
             if (status != DNS_REQUEST_PENDING) {
                 // Immediate failure: drop the instance so a later browse
                 // callback can retry it. Nothing is in flight to drain.
@@ -318,6 +343,8 @@ private:
         auto* op = static_cast<ResolveOp*>(context);
         WindowsBrowser* self = op->browser;
         std::wstring key = op->key;
+        MDNS_TRACE("resolve_callback status=%lu name=%ls",
+                   static_cast<unsigned long>(status), key.c_str());
 
         DiscoveredService payload;
         bool have_payload = false;

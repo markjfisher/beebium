@@ -473,6 +473,29 @@ jobs:
             echo "::warning::A test failed on its first attempt and passed on rerun (flaky). See the ctest output above and root-cause it; do not rely on the retry."
           fi
 
+      - name: Diagnose native Windows mDNS (informational)
+        # This runner is Windows Server 2022 with no Apple Bonjour, so the
+        # dual-provider factory selects the NATIVE DnsService* path -- the only
+        # place it runs at runtime (dev boxes with Bonjour take the Bonjour
+        # path). The [browser][integration] cases skip here rather than assert,
+        # so run the native advertise->browse->resolve round trip directly with
+        # BEEBIUM_MDNS_TRACE=1 to capture the DnsServiceBrowse/Resolve DNS_STATUS
+        # codes. Purpose: determine whether native browse actually works on a
+        # clean box (goal: make it work and then require it) vs. an environment
+        # limitation. Informational only -- never gates the build.
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          BEEBIUM_MDNS_TRACE: "1"
+        run: |
+          echo "::group::native advertiser trace"
+          ./build/tests/Release/test_advertiser.exe "[advertiser][windows]" 2>&1 | grep -E "windns-|SKIP|PASS|FAIL|assertion" || true
+          echo "::endgroup::"
+          echo "::group::native browse round-trip trace"
+          ./build/tests/Release/test_browser.exe "Browser sees an advertised service" 2>&1 | grep -E "windns-|SKIP|PASS|FAIL|assertion|advertise" || true
+          echo "::endgroup::"
+
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 

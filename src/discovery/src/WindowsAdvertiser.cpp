@@ -20,6 +20,8 @@
 #include <windns.h>
 
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -29,6 +31,20 @@
 namespace beebium::discovery {
 
 namespace {
+
+// Set BEEBIUM_MDNS_TRACE=1 to log the native DnsServiceRegister state machine
+// (and the DNS_STATUS of any failure) to stderr.
+bool mdns_trace_enabled() {
+    static const bool enabled = std::getenv("BEEBIUM_MDNS_TRACE") != nullptr;
+    return enabled;
+}
+#define MDNS_TRACE(...)                                          \
+    do {                                                         \
+        if (mdns_trace_enabled()) {                              \
+            std::fprintf(stderr, "[windns-advert] " __VA_ARGS__); \
+            std::fprintf(stderr, "\n");                          \
+        }                                                        \
+    } while (0)
 
 // Convert UTF-8 std::string to wide string
 std::wstring to_wide(const std::string& s) {
@@ -149,6 +165,10 @@ public:
         ZeroMemory(&cancel_, sizeof(cancel_));
 
         DWORD status = DnsServiceRegister(&request_, &cancel_);
+        MDNS_TRACE("DnsServiceRegister(%ls) -> status=%lu (%s)",
+                   instance_name_wide_.c_str(),
+                   static_cast<unsigned long>(status),
+                   status == DNS_REQUEST_PENDING ? "PENDING" : "error");
         if (status != DNS_REQUEST_PENDING) {
             return false;
         }
@@ -211,6 +231,7 @@ private:
         PDNS_SERVICE_INSTANCE instance
     ) {
         auto* self = static_cast<WindowsAdvertiser*>(context);
+        MDNS_TRACE("register_callback status=%lu", static_cast<unsigned long>(status));
 
         if (status == ERROR_SUCCESS && instance != nullptr) {
             self->registered_ = true;
