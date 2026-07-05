@@ -8,9 +8,10 @@ side-effect-free -- which matters at I/O addresses.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     bbc.debugger.stop()
     mem = bbc.memory
 

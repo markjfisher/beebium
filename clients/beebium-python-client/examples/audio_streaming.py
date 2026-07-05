@@ -8,9 +8,10 @@ and streams packed sample chunks. This is the sample stream, distinct from
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     fmt = bbc.audio.format
     print(f"{fmt.sample_rate} Hz, {fmt.source_count} source field(s):")
     for source in fmt.sources:

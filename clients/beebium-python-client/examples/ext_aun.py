@@ -8,11 +8,12 @@ Requires the server to run AUN as its Econet transport (--aun). AUN is an Econet
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 from beebium.client.exceptions import EconetError
 from beebium.ext.econet.aun import Aun
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     aun = bbc.transport[Aun]  # equivalently: Aun.attach(bbc)
 
     # Read-only surface always round-trips.

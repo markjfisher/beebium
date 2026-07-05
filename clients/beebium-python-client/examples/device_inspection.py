@@ -8,9 +8,10 @@ hardware indicators (LEDs, motor). All reads are side-effect-free.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     bbc.debugger.stop()
 
     sv = bbc.system_via.state

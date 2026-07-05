@@ -7,10 +7,11 @@ the CPU view reads and writes the 6502 registers.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 from beebium.client.screen import screen_contains
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     bbc.debugger.stop()
 
     r = bbc.cpu.registers

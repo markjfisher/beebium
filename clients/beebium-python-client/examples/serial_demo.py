@@ -43,13 +43,13 @@ SR_RDRF = 0x01
 SR_TDRE = 0x02
 
 
-def program_serial(bbc):
+def program_serial(bbc: Beebium):
     """Poke the ACIA + Serial ULA into the standard 19200 8N1 configuration."""
     bbc.memory.address.bus[ACIA_STATUS] = ACIA_8N1
     bbc.memory.address.bus[ULA_CONTROL] = ULA_RS423_19200
 
 
-def _wait_for(bbc, mask: int, budget: int = 8000, chunk: int = 100) -> bool:
+def _wait_for(bbc: Beebium, mask: int, budget: int = 8000, chunk: int = 100) -> bool:
     """Step the machine until a status bit is set (or the cycle budget runs out)."""
     stepped = 0
     while stepped < budget:
@@ -60,20 +60,20 @@ def _wait_for(bbc, mask: int, budget: int = 8000, chunk: int = 100) -> bool:
     return bbc.memory.address.peek[ACIA_STATUS] & mask != 0
 
 
-def transmit_byte(bbc, byte: int) -> None:
+def transmit_byte(bbc: Beebium, byte: int) -> None:
     """Send one byte, busy-waiting for TDRE first (exactly as fn-rom does)."""
     _wait_for(bbc, SR_TDRE)
     bbc.memory.address.bus[ACIA_DATA] = byte
 
 
-def read_byte(bbc) -> int | None:
+def read_byte(bbc: Beebium) -> int | None:
     """Wait for a received byte (RDRF) and read it; None if none arrives."""
     if not _wait_for(bbc, SR_RDRF):
         return None
     return bbc.memory.address.bus[ACIA_DATA]
 
 
-def receive_only(bbc, count: int) -> bytes:
+def receive_only(bbc: Beebium, count: int) -> bytes:
     """Read up to `count` bytes the BBC receives (one RDRF poll per byte)."""
     out = bytearray()
     for _ in range(count):
@@ -81,10 +81,10 @@ def receive_only(bbc, count: int) -> bytes:
         if received is None:
             break
         out.append(received)
-    return out
+    return bytes(out)
 
 
-def print_status(bbc):
+def print_status(bbc: Beebium):
     s = bbc.serial.status
     print("  Serial status:")
     print(f"    ACIA control/status: ${s.acia_control:02X} / ${s.acia_status:02X}")
@@ -93,7 +93,7 @@ def print_status(bbc):
     print(f"    baud (tx/rx)       : {s.tx_baud} / {s.rx_baud}")
 
 
-def run_demo(bbc):
+def run_demo(bbc: Beebium):
     """Run the rpc-serial demo against a connected Beebium instance."""
     # Work with the machine stopped so we control exactly how many cycles run.
     bbc.debugger.stop()

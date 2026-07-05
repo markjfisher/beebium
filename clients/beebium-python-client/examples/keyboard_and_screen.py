@@ -8,10 +8,11 @@ hardware scrolling so a fixed read of screen memory isn't rotated.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 from beebium.client.screen import dump_screen, find, screen_contains
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     # Wait for the BASIC prompt, then type a one-liner and run it.
     bbc.run_until_or_timeout(lambda: screen_contains(bbc, ">"), emulated_seconds=3.0)
 

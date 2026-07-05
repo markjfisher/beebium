@@ -8,10 +8,11 @@ extension still loads and its status is readable.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 from beebium.ext.econet.piconet import Piconet
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     piconet = Piconet.attach(bbc)  # equivalently: bbc.transport[Piconet]
     status = piconet.status
     print(f"device path : {status.device_path or '(none configured)'}")

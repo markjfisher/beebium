@@ -8,10 +8,11 @@ that range too.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 from beebium.ext.peripheral.acorn_rtc import AcornRtc
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     rtc = AcornRtc.attach(bbc)  # equivalently: bbc.extensions[AcornRtc]
 
     print(f"time now  : {rtc.get_time().iso8601}")

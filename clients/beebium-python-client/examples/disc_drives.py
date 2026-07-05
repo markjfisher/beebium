@@ -10,9 +10,10 @@ import argparse
 from pathlib import Path
 
 from _demo import run
+from beebium.client import Beebium
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     disc = bbc.disc
     print(f"controller: present={disc.has_controller} type={disc.controller_type!r} "
           f"socketed={disc.is_socketed}")

@@ -8,10 +8,11 @@ BBC's serial line appears as a host pseudo-terminal.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 from beebium.ext.peripheral.host_serial import HostSerial
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     host_serial = bbc.extensions[HostSerial]
 
     cfg = host_serial.get_config()

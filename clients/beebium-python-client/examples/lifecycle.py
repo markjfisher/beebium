@@ -7,9 +7,10 @@ emulated-time run helpers on the client, and SystemService's machine identity.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     ident = bbc.system.identity
     print(f"model   : {ident.model_name} ({ident.model_type})")
     print(f"name    : {ident.name}")

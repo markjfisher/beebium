@@ -7,10 +7,11 @@ current bus phase / status register.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 from beebium.ext.peripheral.acorn_scsi import AcornScsi
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     scsi = bbc.extensions[AcornScsi]  # equivalently: AcornScsi.attach(bbc)
 
     print("targets:")

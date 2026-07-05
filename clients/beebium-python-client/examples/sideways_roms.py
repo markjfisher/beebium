@@ -8,9 +8,10 @@ found. Model B/B+ sockets are fixed; the ROM/RAM board exposes configurable ones
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     report = bbc.sideways.get_slot_status()
     print(f"{report.num_physical_slots} physical socket(s), "
           f"aliasing={report.has_aliasing}\n")

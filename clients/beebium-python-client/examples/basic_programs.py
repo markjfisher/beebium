@@ -7,9 +7,10 @@ get back the screen text, without poking the keyboard matrix yourself.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     bbc.basic.run_program(
         "10 FOR I%=1 TO 3\n"
         '20 PRINT "LINE "; I%\n'

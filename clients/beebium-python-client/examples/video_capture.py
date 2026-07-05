@@ -7,9 +7,10 @@ as a PNG -- PNG export needs Pillow, from the ``imaging`` extra.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     cfg = bbc.video.config
     print(f"display: {cfg.width}x{cfg.height} @ {cfg.framerate_hz} Hz")
 

@@ -16,6 +16,7 @@ Launched here with --rpc-serial and --aun so both registries have an entry.
 from __future__ import annotations
 
 from _demo import run
+from beebium.client import Beebium
 from beebium.client.extension import (
     ECONET_ENTRY_POINT_GROUP,
     PERIPHERAL_ENTRY_POINT_GROUP,
@@ -26,7 +27,7 @@ from beebium.ext.econet.aun import Aun
 from beebium.ext.peripheral.rpc_serial import RpcSerial
 
 
-def demo(bbc):
+def demo(bbc: Beebium) -> None:
     # 1. Peripheral extensions the server loaded (PeripheralExtensionService).
     print("peripheral extensions loaded:")
     for info in bbc.extensions.loaded:
