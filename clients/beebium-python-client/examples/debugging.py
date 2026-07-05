@@ -27,21 +27,24 @@ def demo(bbc: Beebium) -> None:
         bbc.debugger.step()
         print(f"  step -> PC=${bbc.cpu.pc:04X}")
 
-    # OSWRCH (&FFEE) is the OS "write a character" vector: it writes the byte in
-    # A to the current output. The MOS echoes each typed key through OSWRCH, so
-    # once we queue a keystroke and resume, the next OSWRCH call is that echo --
-    # a deterministic place to hit the breakpoint. We never press Return, so the
-    # PRINT never runs; it is the echo of the first character we break on. A
-    # breakpoint used as a context manager is removed again on exit.
+    # Conditional breakpoint on program OUTPUT. OSWRCH writes the byte in A to
+    # the current output. Code reaches it through the vector WRCHV at &020E, so a
+    # breakpoint on the &FFEE entry misses BASIC's own output (it calls the
+    # routine via the vector). &020E is a pointer, not code -- you don't break on
+    # the vector, you read it and break at the routine it points to. That catches
+    # every write. PRINT 6*7 prints "42", and '4' (&34) never appears in the
+    # typed line, so we stop on the printed result, not on our keystroke echoes.
     bbc.run_until_or_timeout(lambda: screen_contains(bbc, ">"), emulated_seconds=3.0)
-    bbc.keyboard.type("PRINT 42")  # queued input; the MOS echoes each key via OSWRCH
+    oswrch = bbc.memory.address.peek[0x020E] | (bbc.memory.address.peek[0x020F] << 8)
+    bbc.keyboard.type("PRINT 6*7\r")
 
-    with bbc.debugger.breakpoint(0xFFEE):
+    # A breakpoint used as a context manager is removed again on exit.
+    with bbc.debugger.breakpoint(oswrch, condition="A == 0x34"):
         bbc.debugger.ensure_running()
         bbc.debugger.wait_for_stop()
-    char = bbc.cpu.a  # the byte OSWRCH is about to write -- the echoed "P"
+    char = bbc.cpu.a  # '4' -- the first digit of the printed result 42
     glyph = chr(char) if 32 <= char < 127 else "?"
-    print(f"broke in OSWRCH; character in A = ${char:02X} ({glyph!r})")
+    print(f"broke as PRINT printed {glyph!r} (${char:02X}) via OSWRCH at ${oswrch:04X}")
 
     print(f"total cycles executed: {bbc.debugger.cycle_count}")
 
