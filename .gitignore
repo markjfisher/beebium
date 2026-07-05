@@ -124,3 +124,7 @@ docs/local-*.md
 
 # Local packaging build outputs (Linux bundle tarballs)
 _artifacts/
+
+# Integration tests are server end-to-end tests driven by the Python client;
+# they resolve fresh against the source-tree client, so their locks are not committed.
+integration_tests/*/uv.lock
