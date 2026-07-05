@@ -1,0 +1,34 @@
+"""Lifecycle: obtain a client, run emulated time, read the machine identity.
+
+Illustrates Beebium.connect / Beebium.launch (via the shared helper), the
+emulated-time run helpers on the client, and SystemService's machine identity.
+"""
+
+from __future__ import annotations
+
+from _demo import run
+
+
+def demo(bbc):
+    ident = bbc.system.identity
+    print(f"model   : {ident.model_name} ({ident.model_type})")
+    print(f"name    : {ident.name}")
+    print(f"uuid    : {ident.uuid}")
+    print(f"clock   : {bbc.system.clock_speed_hz / 1e6:.2f} MHz")
+    print(f"clients : {bbc.system.client_count}")
+
+    # Advance a fixed slice of *emulated* time (independent of the wall clock).
+    bbc.debugger.ensure_stopped()
+    start = bbc.debugger.cycle_count
+    bbc.run_for_emulated_seconds(0.5)
+    print(f"\nran {bbc.debugger.cycle_count - start} cycles (~0.5s emulated)")
+
+    # Or run until a predicate holds, bounded by an emulated-time budget.
+    in_os = bbc.run_until_or_timeout(
+        lambda: bbc.cpu.pc >= 0xC000, emulated_seconds=1.0
+    )
+    print(f"PC reached the OS ROM: {in_os} (PC=${bbc.cpu.pc:04X})")
+
+
+if __name__ == "__main__":
+    run(demo, description="Client lifecycle, emulated-time helpers, identity.")
