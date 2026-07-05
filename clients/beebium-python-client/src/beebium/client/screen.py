@@ -51,10 +51,17 @@ Separator = Callable[[Row, Row], Row]
 
 
 class _ScreenClient(Protocol):
-    """The slice of the Beebium client these helpers need."""
+    """The slice of the Beebium client these helpers need.
 
-    memory: object
-    crtc: object
+    Declared as read-only properties (not plain attributes) so the client's
+    ``@property`` accessors satisfy the protocol -- a read-only property is not
+    assignable to a writable protocol attribute.
+    """
+
+    @property
+    def memory(self) -> object: ...
+    @property
+    def crtc(self) -> object: ...
 
 
 # ---------------------------------------------------------------------------
