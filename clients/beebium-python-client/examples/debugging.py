@@ -14,16 +14,8 @@ from beebium.client.screen import screen_contains
 def demo(bbc: Beebium) -> None:
     bbc.debugger.stop()
 
-    r = bbc.cpu.registers
-    flags = "".join(
-        letter if bit else "-"
-        for letter, bit in [
-            ("N", r.negative), ("V", r.overflow), ("D", r.decimal),
-            ("I", r.interrupt_disable), ("Z", r.zero), ("C", r.carry),
-        ]
-    )
-    print(f"stopped: PC=${r.pc:04X} A=${r.a:02X} X=${r.x:02X} Y=${r.y:02X} "
-          f"SP=${r.sp:02X} [{flags}]")
+    # Registers has a canonical __str__ (A/X/Y/SP/PC/P + flags), so just print it.
+    print(f"stopped: {bbc.cpu.registers}")
 
     # Single-step three instructions.
     for _ in range(3):
