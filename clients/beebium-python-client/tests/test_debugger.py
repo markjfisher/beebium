@@ -23,7 +23,7 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.client.cpu import Registers, StatusRegister
-from beebium.client.debugger import Breakpoint, ExecutionStateEvent
+from beebium.client.debugger import Breakpoint, ExecutionStateEvent, Watchpoint
 from beebium.client.exceptions import DebuggerError, InvalidConditionError
 from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
 
@@ -243,11 +243,41 @@ class TestWatchpoints:
 
     def test_add_and_list(self, bbc):
         wp_id = bbc.debugger.add_watchpoint(0x1000, 0x1010, type="write")
+        assert wp_id.id > 0
         wps = bbc.debugger.list_watchpoints()
         assert len(wps) == 1
         assert wps[0].start_address == 0x1000
         assert wps[0].end_address == 0x1010
         assert wps[0].type == "write"
+
+    def test_add_returns_bound_watchpoint(self, bbc):
+        """add_watchpoint returns a Watchpoint carrying its config."""
+        wp = bbc.debugger.add_watchpoint(0x1000, 0x1010, type="write")
+        assert isinstance(wp, Watchpoint)
+        assert wp.start_address == 0x1000
+        assert wp.type == "write"
+        assert wp.enabled is True
+
+    def test_watchpoint_remove_method(self, bbc):
+        """Watchpoint.remove() removes it from the emulator."""
+        wp = bbc.debugger.add_watchpoint(0x2000, 0x2001)
+        assert wp.remove() is True
+        assert len(bbc.debugger.list_watchpoints()) == 0
+
+    def test_watchpoint_disable_enable_methods(self, bbc):
+        """Watchpoint.disable()/enable() toggle the live watchpoint."""
+        wp = bbc.debugger.add_watchpoint(0x3000, 0x3001)
+        wp.disable()
+        assert bbc.debugger.list_watchpoints()[0].enabled is False
+        wp.enable()
+        assert bbc.debugger.list_watchpoints()[0].enabled is True
+
+    def test_context_manager_yields_watchpoint(self, bbc):
+        """The watchpoint context manager yields a Watchpoint and cleans up."""
+        with bbc.debugger.watchpoint(0x4000, 0x4001, "write") as wp:
+            assert isinstance(wp, Watchpoint)
+            assert wp.start_address == 0x4000
+        assert len(bbc.debugger.list_watchpoints()) == 0
 
     def test_remove(self, bbc):
         wp_id = bbc.debugger.add_watchpoint(0x2000, 0x2001)

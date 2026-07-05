@@ -83,8 +83,15 @@ def _bp_id(breakpoint: Breakpoint | int) -> int:
 
 
 @dataclass(frozen=True)
-class WatchpointInfo:
-    """A watchpoint set in the emulator."""
+class Watchpoint:
+    """A watchpoint set in the emulator.
+
+    Returned by :meth:`Debugger.add_watchpoint` and
+    :meth:`Debugger.list_watchpoints`, and yielded by the ``watchpoint`` context
+    manager. ``enabled`` and ``hit_count`` are a snapshot from when the object
+    was obtained; the :meth:`enable`, :meth:`disable` and :meth:`remove` methods
+    act on the live watchpoint.
+    """
 
     id: int
     start_address: int
@@ -94,6 +101,29 @@ class WatchpointInfo:
     stop_counterpart: bool = False
     hit_count: int = 0
     enabled: bool = True
+    _debugger: Debugger | None = field(default=None, repr=False, compare=False)
+
+    def remove(self) -> bool:
+        """Remove this watchpoint from the emulator."""
+        return self._bound().remove_watchpoint(self.id)
+
+    def enable(self) -> None:
+        """Enable this watchpoint (a no-op if already enabled)."""
+        self._bound().enable_watchpoint(self.id)
+
+    def disable(self) -> None:
+        """Disable this watchpoint without removing it."""
+        self._bound().disable_watchpoint(self.id)
+
+    def _bound(self) -> Debugger:
+        if self._debugger is None:
+            raise DebuggerError("this Watchpoint is not bound to a debugger")
+        return self._debugger
+
+
+def _wp_id(watchpoint: Watchpoint | int) -> int:
+    """Return the ID of a Watchpoint, or the int unchanged."""
+    return watchpoint.id if isinstance(watchpoint, Watchpoint) else watchpoint
 
 
 @dataclass(frozen=True)
@@ -532,20 +562,31 @@ class Debugger:
         condition: str = "",
         stop_counterpart: bool = False,
         enabled: bool = True,
-    ) -> int:
+    ) -> Watchpoint:
         """Add a watchpoint on an address range.
+
+        The watchpoint fires when the CPU reads and/or writes (per ``type``) an
+        address in ``[start_address, end_address)`` and its ``condition`` is true.
 
         Args:
             start_address: Start of range (inclusive).
             end_address: End of range (exclusive).
-            type: "read", "write", or "both".
-            condition: Optional expression evaluated on hit. Empty = unconditional.
-                Use ``hits`` for hit-count logic, e.g. ``"hits == 5"``.
-                Use ``"false"`` for recording-only (never stops).
-            stop_counterpart: Signal the other processor to stop.
+            type: ``"read"``, ``"write"`` or ``"both"``.
+            condition: An expression evaluated on each hit; the machine only stops
+                when it is non-zero. Empty means unconditional. See
+                :meth:`add_breakpoint` for the full expression grammar. Use
+                ``"false"`` for a recording-only watchpoint that never stops.
+            stop_counterpart: Also signal the counterpart processor to stop.
+            enabled: Whether the watchpoint is active immediately; pass ``False``
+                to add it disabled.
 
         Returns:
-            The watchpoint ID.
+            The new :class:`Watchpoint` (bound to this debugger, so you can call
+            ``.remove()`` / ``.disable()`` / ``.enable()`` on it).
+
+        Raises:
+            InvalidConditionError: If ``condition`` is not a valid expression.
+            DebuggerError: If the watchpoint cannot be added.
         """
         type_map = {
             "read": debugger_pb2.WATCHPOINT_READ,
@@ -568,8 +609,20 @@ class Debugger:
                 raise InvalidConditionError(e.details()) from e
             raise
         if not response.success:
-            raise DebuggerError(f"Failed to add watchpoint at ${start_address:04X}-${end_address:04X}")
-        return response.id
+            raise DebuggerError(
+                f"Failed to add watchpoint at ${start_address:04X}-${end_address:04X}"
+            )
+        return Watchpoint(
+            id=response.id,
+            start_address=start_address,
+            end_address=end_address,
+            type=type,
+            condition=condition,
+            stop_counterpart=stop_counterpart,
+            hit_count=0,
+            enabled=enabled,
+            _debugger=self,
+        )
 
     @contextmanager
     def watchpoint(
@@ -581,16 +634,20 @@ class Debugger:
         condition: str = "",
         stop_counterpart: bool = False,
         enabled: bool = True,
-    ) -> Iterator[int]:
-        """Context manager that adds a watchpoint and removes it on exit.
+    ) -> Iterator[Watchpoint]:
+        """Add a watchpoint for the duration of a ``with`` block.
+
+        Adds it on entry and removes it on exit (also on an exception). The
+        parameters are those of :meth:`add_watchpoint`. Yields the new
+        :class:`Watchpoint`.
 
         Usage::
 
-            with bbc.debugger.watchpoint(0xFE00, 0xFF00, "write") as wp_id:
+            with bbc.debugger.watchpoint(0xFE00, 0xFF00, "write") as wp:
                 bbc.debugger.run()
                 event = bbc.debugger.wait_for_stop()
         """
-        wp_id = self.add_watchpoint(
+        wp = self.add_watchpoint(
             start_address,
             end_address,
             type,
@@ -599,17 +656,17 @@ class Debugger:
             enabled=enabled,
         )
         try:
-            yield wp_id
+            yield wp
         finally:
-            self.remove_watchpoint(wp_id)
+            wp.remove()
 
-    def remove_watchpoint(self, watchpoint_id: int) -> bool:
-        """Remove a watchpoint by ID."""
-        request = debugger_pb2.RemoveWatchpointRequest(id=watchpoint_id)
+    def remove_watchpoint(self, watchpoint: Watchpoint | int) -> bool:
+        """Remove a watchpoint (a Watchpoint or its ID)."""
+        request = debugger_pb2.RemoveWatchpointRequest(id=_wp_id(watchpoint))
         response = self._stub.RemoveWatchpoint(request)
         return response.success
 
-    def list_watchpoints(self) -> list[WatchpointInfo]:
+    def list_watchpoints(self) -> list[Watchpoint]:
         """List all active watchpoints."""
         response = self._stub.ListWatchpoints(debugger_pb2.Empty())
         type_map = {
@@ -618,7 +675,7 @@ class Debugger:
             debugger_pb2.WATCHPOINT_BOTH: "both",
         }
         return [
-            WatchpointInfo(
+            Watchpoint(
                 id=wp.id,
                 start_address=wp.start_address,
                 end_address=wp.end_address,
@@ -627,38 +684,36 @@ class Debugger:
                 stop_counterpart=wp.stop_counterpart,
                 hit_count=wp.hit_count,
                 enabled=wp.enabled,
+                _debugger=self,
             )
             for wp in response.watchpoints
         ]
 
-    def enable_watchpoint(self, watchpoint_id: int) -> None:
-        """Enable a watchpoint."""
-        request = debugger_pb2.EnableWatchpointRequest(
-            id=watchpoint_id,
-            enabled=True,
-        )
+    def enable_watchpoint(self, watchpoint: Watchpoint | int) -> None:
+        """Enable a watchpoint (a Watchpoint or its ID)."""
+        wp_id = _wp_id(watchpoint)
+        request = debugger_pb2.EnableWatchpointRequest(id=wp_id, enabled=True)
         response = self._stub.EnableWatchpoint(request)
         if not response.success:
-            raise DebuggerError(f"Watchpoint {watchpoint_id} not found")
+            raise DebuggerError(f"Watchpoint {wp_id} not found")
 
-    def disable_watchpoint(self, watchpoint_id: int) -> None:
+    def disable_watchpoint(self, watchpoint: Watchpoint | int) -> None:
         """Disable a watchpoint. Hit count and configuration are preserved."""
-        request = debugger_pb2.EnableWatchpointRequest(
-            id=watchpoint_id,
-            enabled=False,
-        )
+        wp_id = _wp_id(watchpoint)
+        request = debugger_pb2.EnableWatchpointRequest(id=wp_id, enabled=False)
         response = self._stub.EnableWatchpoint(request)
         if not response.success:
-            raise DebuggerError(f"Watchpoint {watchpoint_id} not found")
+            raise DebuggerError(f"Watchpoint {wp_id} not found")
 
     @contextmanager
-    def suppressed_watchpoint(self, watchpoint_id: int) -> Iterator[int]:
+    def suppressed_watchpoint(self, watchpoint: Watchpoint | int) -> Iterator[int]:
         """Temporarily disable a watchpoint, re-enabling on exit."""
-        self.disable_watchpoint(watchpoint_id)
+        wp_id = _wp_id(watchpoint)
+        self.disable_watchpoint(wp_id)
         try:
-            yield watchpoint_id
+            yield wp_id
         finally:
-            self.enable_watchpoint(watchpoint_id)
+            self.enable_watchpoint(wp_id)
 
     def clear_watchpoints(self) -> int:
         """Remove all watchpoints. Returns the count removed."""
