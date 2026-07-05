@@ -224,12 +224,12 @@ class Basic:
         self._client.keyboard.press_return()
 
     def send_break(self, hold_time: float = 0.1) -> None:
-        """Send BREAK (Escape key).
+        """Send a BREAK keypress.
 
         Args:
-            hold_time: How long to hold the key (seconds).
+            hold_time: How long to hold the BREAK key (seconds).
         """
-        self._client.keyboard.press_escape(hold_time=hold_time)
+        self._client.keyboard.press_break(hold_time=hold_time)
 
     def get_himem(self) -> int:
         """Get the current HIMEM value.
