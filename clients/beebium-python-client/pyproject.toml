@@ -52,6 +52,7 @@ test = [
 dev = [
     { include-group = "test" },
     "grpcio-tools>=1.60.0",
+    "mypy-protobuf>=3.6.0",
 ]
 
 [project.entry-points.pytest11]

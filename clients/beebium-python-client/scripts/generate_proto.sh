@@ -48,11 +48,14 @@ sed_inplace() {
 # every generated file in the given output directory.
 postprocess() {
     local out="$1"
-    for file in "$out"/*_pb2_grpc.py; do
+    # Rewrite the sibling _pb2 import to a package-relative one, in both the
+    # runtime stubs (.py) and the mypy type stubs (.pyi).
+    for file in "$out"/*_pb2_grpc.py "$out"/*_pb2_grpc.pyi; do
         [[ -f "$file" ]] || continue
         sed_inplace 's/^import \(.*_pb2\) as/from . import \1 as/' "$file"
+        sed_inplace 's/^import \(.*_pb2\)$/from . import \1/' "$file"
     done
-    for file in "$out"/*_pb2.py "$out"/*_pb2_grpc.py; do
+    for file in "$out"/*_pb2.py "$out"/*_pb2_grpc.py "$out"/*_pb2.pyi "$out"/*_pb2_grpc.pyi; do
         if [[ -f "$file" ]] && ! grep -q "Robert Smallshire" "$file"; then
             printf '%s\n%s' "$HEADER" "$(cat "$file")" > "$file"
         fi
@@ -66,6 +69,8 @@ python -m grpc_tools.protoc \
     -I "$EXTENSION_API_PROTO_DIR" \
     --python_out="$CORE_OUT" \
     --grpc_python_out="$CORE_OUT" \
+    --mypy_out="$CORE_OUT" \
+    --mypy_grpc_out="$CORE_OUT" \
     "$PROTO_DIR/video.proto" \
     "$PROTO_DIR/keyboard.proto" \
     "$PROTO_DIR/debugger.proto" \
@@ -93,6 +98,8 @@ gen_ext() {
         -I "$proto_dir" \
         --python_out="$out" \
         --grpc_python_out="$out" \
+        --mypy_out="$out" \
+        --mypy_grpc_out="$out" \
         "$proto_file"
     postprocess "$out"
 }
