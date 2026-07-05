@@ -806,28 +806,28 @@ class Debugger:
             DebuggerError: If the breakpoint cannot be set, or if the timeout
                 expires before the breakpoint is hit.
         """
-        bp_id = self.add_breakpoint(address)
-        try:
-            stream = self._stub.WatchExecutionState(
-                debugger_pb2.WatchExecutionStateRequest(),
-                timeout=timeout,
-            )
-            # Consume initial state and record its sequence number
-            initial = next(stream)
-            initial_sequence = initial.state.sequence
-            # Start execution
-            self.run()
-            # Wait for a stopped event with a higher sequence number
-            for event in stream:
-                if event.state.is_running:
-                    continue
-                if event.state.sequence > initial_sequence:
-                    stream.cancel()
-                    return _to_execution_state(event.state)
-            raise DebuggerError("Stream ended without stop")
-        except grpc.RpcError as e:
-            if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                raise DebuggerError(f"Timed out waiting for stop after {timeout}s") from None
-            raise
-        finally:
-            self.remove_breakpoint(bp_id)
+        with self.breakpoint(address):
+            try:
+                stream = self._stub.WatchExecutionState(
+                    debugger_pb2.WatchExecutionStateRequest(),
+                    timeout=timeout,
+                )
+                # Consume initial state and record its sequence number
+                initial = next(stream)
+                initial_sequence = initial.state.sequence
+                # Start execution
+                self.run()
+                # Wait for a stopped event with a higher sequence number
+                for event in stream:
+                    if event.state.is_running:
+                        continue
+                    if event.state.sequence > initial_sequence:
+                        stream.cancel()
+                        return _to_execution_state(event.state)
+                raise DebuggerError("Stream ended without stop")
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                    raise DebuggerError(
+                        f"Timed out waiting for stop after {timeout}s"
+                    ) from None
+                raise
