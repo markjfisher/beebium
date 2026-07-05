@@ -27,10 +27,10 @@ from pathlib import Path
 import grpc
 
 from beebium.client import Beebium
-from beebium.screen import dump_screen, read_mode7_screen
+from beebium.client.screen import dump_screen, read_mode7_screen
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "clients" / "python" / "src"))
-from beebium._proto import debugger_pb2, debugger_pb2_grpc
+from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
 
 
 def _wait_for_screen_text(bbc, text, timeout_seconds=120.0, poll_interval=0.5):

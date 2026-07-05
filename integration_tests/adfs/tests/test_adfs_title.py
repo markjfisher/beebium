@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from beebium.screen import screen_contains, dump_screen
+from beebium.client.screen import screen_contains, dump_screen
 
 from adfs_test_support.basictool import tokenise
 from adfs_test_support.disc_builder import build_test_disc

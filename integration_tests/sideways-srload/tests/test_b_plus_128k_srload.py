@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-from beebium.sideways import (
+from beebium.client.sideways import (
     SlotHeaderChangedEvent,
     SlotType,
 )
@@ -164,7 +164,7 @@ def test_srload_amx_into_sram_z_shows_in_help_after_break(
     whether *SRLOAD-into-RAM produces a usable service ROM at
     all on the B+ 128K.
     """
-    from beebium.screen import dump_screen, screen_contains
+    from beebium.client.screen import dump_screen, screen_contains
 
     bbc = b_plus_128k_with_adfs_disc
 
@@ -203,7 +203,7 @@ def test_srload_comal_into_sram_z_shows_in_help_after_break(
     "COMAL" via *HELP. Same probe shape as AMX but for the language-
     ROM scan path rather than the service-ROM scan path.
     """
-    from beebium.screen import dump_screen, screen_contains
+    from beebium.client.screen import dump_screen, screen_contains
 
     bbc = b_plus_128k_with_adfs_disc
 
@@ -240,7 +240,7 @@ def test_adfs_at_startup_in_a_rom_socket_boots_cleanly(
     at startup must boot the B+ 128K cleanly. If this fails, the
     issue isn't *SRLOAD-related at all.
     """
-    from beebium.screen import dump_screen
+    from beebium.client.screen import dump_screen
 
     bbc = b_plus_128k_with_adfs_at_startup
     screen = dump_screen(bbc)
@@ -258,7 +258,7 @@ def test_srload_anfs_into_sram_z_works_through_break(
     ADFS variant fails, the issue is ADFS-specific (likely a
     self-test in ADFS that something in the B+ emulation breaks).
     """
-    from beebium.screen import dump_screen, screen_contains
+    from beebium.client.screen import dump_screen, screen_contains
 
     bbc = b_plus_128k_with_adfs_disc
 
@@ -304,7 +304,7 @@ def test_srload_adfs_into_sram_z_is_visible_to_mos(
     output (byte preservation, full screen dump) is on hand if anyone
     revisits.
     """
-    from beebium.screen import dump_screen, screen_contains
+    from beebium.client.screen import dump_screen, screen_contains
 
     bbc = b_plus_128k_with_adfs_disc
     source_bytes = adfs_rom_filepath.read_bytes()

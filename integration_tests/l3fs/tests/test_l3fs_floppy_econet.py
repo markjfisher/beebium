@@ -33,8 +33,8 @@ from pathlib import Path
 import pytest
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import dump_screen, lined, linearise, read_mode7_screen
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import dump_screen, lined, linearise, read_mode7_screen
 
 
 REPO_ROOT = Path(__file__).parent.parent.parent.parent

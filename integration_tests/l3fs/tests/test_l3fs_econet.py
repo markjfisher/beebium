@@ -32,8 +32,8 @@ import time
 import pytest
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import dump_screen, lined, linearise, read_mode7_screen
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import dump_screen, lined, linearise, read_mode7_screen
 
 
 # AUN port assignments (convention: 10000 + station number).

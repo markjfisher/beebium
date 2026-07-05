@@ -27,7 +27,7 @@ from __future__ import annotations
 from oaknut.dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
 from beebium.client import Beebium
-from beebium.screen import read_mode7_screen, dump_screen
+from beebium.client.screen import read_mode7_screen, dump_screen
 
 
 # 8 KiB = 32 sectors. On a freshly-formatted disc DFS lays the file down from

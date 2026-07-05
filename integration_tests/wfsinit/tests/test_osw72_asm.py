@@ -24,11 +24,11 @@ import grpc
 import pytest
 
 from beebium.client import Beebium
-from beebium.disassemble import disassemble
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import screen_contains, dump_screen, read_mode7_screen
+from beebium.client.disassemble import disassemble
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import screen_contains, dump_screen, read_mode7_screen
 
-from beebium._proto import scsi_host_adapter_pb2, scsi_host_adapter_pb2_grpc
+from beebium.ext.peripheral.acorn_scsi._proto import scsi_host_adapter_pb2, scsi_host_adapter_pb2_grpc
 
 
 ASM_DIRPATH = Path(__file__).parent.parent / "asm"

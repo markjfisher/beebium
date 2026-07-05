@@ -33,7 +33,7 @@ import pytest
 from oaknut.dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
 from beebium.client import Beebium
-from beebium.screen import screen_contains, read_mode7_screen, dump_screen
+from beebium.client.screen import screen_contains, read_mode7_screen, dump_screen
 
 from conftest import TUBE_CYCLES_PER_KEY, run_until_or_timeout, SSD_SIZE
 

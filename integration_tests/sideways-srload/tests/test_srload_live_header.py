@@ -30,7 +30,7 @@ import time
 
 import pytest
 
-from beebium.sideways import (
+from beebium.client.sideways import (
     SlotHeaderChangedEvent,
     SlotType,
 )

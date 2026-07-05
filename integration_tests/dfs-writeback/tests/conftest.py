@@ -29,7 +29,7 @@ import pytest
 from oaknut.dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
 from beebium.client import Beebium
-from beebium.screen import screen_contains, dump_screen
+from beebium.client.screen import screen_contains, dump_screen
 
 
 # DFS ROM goes in slot 11 (IC52) on the B+, matching the ADFS suite's layout.

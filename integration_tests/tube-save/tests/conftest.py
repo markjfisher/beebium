@@ -25,8 +25,8 @@ import pytest
 from oaknut.dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import screen_contains, dump_screen
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import screen_contains, dump_screen
 
 from adfs_test_support.basictool import build_basictool, tokenise
 from adfs_test_support.disc_builder import build_test_disc

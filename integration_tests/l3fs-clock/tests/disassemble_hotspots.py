@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from beebium.client import Beebium
-from beebium.screen import read_mode7_screen
+from beebium.client.screen import read_mode7_screen
 
 
 def _wait_for_screen_text(bbc, text, timeout_seconds=120.0, poll_interval=0.5):

@@ -38,8 +38,8 @@ import pytest
 from oaknut.dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import screen_contains, dump_screen
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import screen_contains, dump_screen
 
 
 # DFS 2.26 carries the SRAM utilities (*SRLOAD &c). We load it

@@ -34,10 +34,10 @@ import grpc
 import pytest
 
 from beebium.client import Beebium
-from beebium.screen import screen_contains, dump_screen, read_mode7_screen
+from beebium.client.screen import screen_contains, dump_screen, read_mode7_screen
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "clients" / "python" / "src"))
-from beebium._proto import acorn_rtc_pb2, acorn_rtc_pb2_grpc
+from beebium.ext.peripheral.acorn_rtc._proto import acorn_rtc_pb2, acorn_rtc_pb2_grpc
 
 
 def _wait_for_screen_text(bbc, text, timeout_seconds=120.0, poll_interval=0.5):

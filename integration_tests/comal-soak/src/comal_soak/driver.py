@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from beebium.client import Beebium
-from beebium.screen import dump_screen, read_mode7_screen
+from beebium.client.screen import dump_screen, read_mode7_screen
 
 REPO = Path(__file__).resolve().parents[4]
 DEFAULT_ROMS = REPO / "roms"

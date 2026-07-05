@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from beebium.screen import screen_contains, dump_screen, read_mode7_screen
+from beebium.client.screen import screen_contains, dump_screen, read_mode7_screen
 
 
 def _load_and_run(bbc, emulated_seconds: float = 30.0) -> bool:

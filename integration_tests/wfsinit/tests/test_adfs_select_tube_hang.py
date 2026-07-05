@@ -33,11 +33,11 @@ import grpc
 import pytest
 
 from beebium.client import Beebium
-from beebium.disassemble import disassemble
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import screen_contains, dump_screen
+from beebium.client.disassemble import disassemble
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import screen_contains, dump_screen
 
-from beebium._proto import scsi_host_adapter_pb2, scsi_host_adapter_pb2_grpc
+from beebium.ext.peripheral.acorn_scsi._proto import scsi_host_adapter_pb2, scsi_host_adapter_pb2_grpc
 
 
 TUBE_CYCLES_PER_KEY = 200_000
@@ -56,7 +56,7 @@ def run_until_or_timeout(bbc, predicate, emulated_seconds, chunk_seconds=1.0):
 
 def _has_prompt_after(bbc, command_text):
     """Check if a '>' prompt appears on a line after the command text."""
-    from beebium.screen import read_mode7_screen
+    from beebium.client.screen import read_mode7_screen
     rows = read_mode7_screen(bbc)
     found_command = False
     for row in rows:
@@ -186,7 +186,7 @@ def _dump_hang_diagnostics(bbc):
 
     # Tube protocol trace (last N R2/R4 events)
     try:
-        from beebium._proto import debugger_pb2, debugger_pb2_grpc
+        from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
         stub = debugger_pb2_grpc.DeviceInspectionStub(
             grpc.insecure_channel(bbc.target)
         )
@@ -387,7 +387,7 @@ def test_osword_72_then_adfs_select_with_tube(
                     "See diagnostics above."
                 )
 
-            from beebium.screen import read_mode7_screen
+            from beebium.client.screen import read_mode7_screen
             rows = read_mode7_screen(bbc)
             screen_text = "\n".join(rows)
             print(f"Screen:\n{dump_screen(bbc)}")
@@ -628,7 +628,7 @@ def test_osword_72_scsi_read_with_tube(
                 )
 
             # Check result
-            from beebium.screen import read_mode7_screen
+            from beebium.client.screen import read_mode7_screen
             rows = read_mode7_screen(bbc)
             screen_text = "\n".join(rows)
             if "ERR:" in screen_text:
@@ -717,7 +717,7 @@ def test_osword_72_after_adfs_select_with_tube(
                     "this is WFSINIT's exact code path. See diagnostics above."
                 )
 
-            from beebium.screen import read_mode7_screen
+            from beebium.client.screen import read_mode7_screen
             rows = read_mode7_screen(bbc)
             screen_text = "\n".join(rows)
             assert "ADFS SELECTED" in screen_text, \
