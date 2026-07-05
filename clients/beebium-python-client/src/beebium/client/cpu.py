@@ -17,68 +17,59 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
-from beebium.client.exceptions import DebuggerError
 
 
-@dataclass
-class Registers:
-    """6502 CPU register snapshot."""
+@dataclass(frozen=True)
+class StatusRegister:
+    """The 6502 processor status register (P), decoded into named flags.
 
-    a: int  # Accumulator (0-255)
-    x: int  # X index register (0-255)
-    y: int  # Y index register (0-255)
-    sp: int  # Stack pointer (0-255, stack at $0100-$01FF)
-    pc: int  # Program counter (0-65535)
-    p: int  # Processor status flags
+    An immutable value object wrapping the raw status byte. Bit positions
+    follow the NMOS 6502 (bit 5 is unused and always reads as set).
+    """
 
-    # Interrupt handler tracking
-    in_nmi_handler: bool = False
-    in_irq_handler: bool = False
-    nmi_pending: bool = False
-    irq_pending: bool = False
-    device_irq_flags: int = 0
-    device_nmi_flags: int = 0
-
-    # Flag accessors
+    value: int  # Raw status byte (0-255)
 
     @property
     def carry(self) -> bool:
         """Carry flag (bit 0)."""
-        return bool(self.p & 0x01)
+        return bool(self.value & 0x01)
 
     @property
     def zero(self) -> bool:
         """Zero flag (bit 1)."""
-        return bool(self.p & 0x02)
+        return bool(self.value & 0x02)
 
     @property
     def interrupt_disable(self) -> bool:
         """Interrupt disable flag (bit 2)."""
-        return bool(self.p & 0x04)
+        return bool(self.value & 0x04)
 
     @property
     def decimal(self) -> bool:
         """Decimal mode flag (bit 3)."""
-        return bool(self.p & 0x08)
+        return bool(self.value & 0x08)
 
     @property
     def break_flag(self) -> bool:
         """Break flag (bit 4)."""
-        return bool(self.p & 0x10)
+        return bool(self.value & 0x10)
 
     @property
     def overflow(self) -> bool:
         """Overflow flag (bit 6)."""
-        return bool(self.p & 0x40)
+        return bool(self.value & 0x40)
 
     @property
     def negative(self) -> bool:
         """Negative flag (bit 7)."""
-        return bool(self.p & 0x80)
+        return bool(self.value & 0x80)
+
+    def __int__(self) -> int:
+        return self.value
 
     def __str__(self) -> str:
-        """Format registers for display."""
-        flags = (
+        """Render as the conventional flag string (uppercase = set)."""
+        return (
             ("N" if self.negative else "n")
             + ("V" if self.overflow else "v")
             + "-"
@@ -88,9 +79,42 @@ class Registers:
             + ("Z" if self.zero else "z")
             + ("C" if self.carry else "c")
         )
+
+
+@dataclass(frozen=True)
+class Registers:
+    """An immutable snapshot of the 6502 CPU registers.
+
+    ``bbc.cpu.registers`` returns one coherent snapshot. Registers are never
+    written by mutating a snapshot (that would mean nothing) -- writes go
+    through ``bbc.cpu.update(...)`` or the individual setters -- hence frozen.
+    """
+
+    a: int  # Accumulator (0-255)
+    x: int  # X index register (0-255)
+    y: int  # Y index register (0-255)
+    sp: int  # Stack pointer (0-255, stack at $0100-$01FF)
+    pc: int  # Program counter (0-65535)
+    p: int  # Raw processor status byte
+
+    # Interrupt handler tracking
+    in_nmi_handler: bool = False
+    in_irq_handler: bool = False
+    nmi_pending: bool = False
+    irq_pending: bool = False
+    device_irq_flags: int = 0
+    device_nmi_flags: int = 0
+
+    @property
+    def status(self) -> StatusRegister:
+        """The processor status register (P) decoded into named flags."""
+        return StatusRegister(self.p)
+
+    def __str__(self) -> str:
+        """Format registers for display."""
         result = (
             f"A={self.a:02X} X={self.x:02X} Y={self.y:02X} "
-            f"SP={self.sp:02X} PC={self.pc:04X} P={self.p:02X} [{flags}]"
+            f"SP={self.sp:02X} PC={self.pc:04X} P={self.p:02X} [{self.status}]"
         )
         interrupts = []
         if self.in_nmi_handler:
@@ -106,24 +130,46 @@ class Registers:
         return result
 
 
+def _registers_from_proto(state: debugger_pb2.Cpu6502State) -> Registers:
+    """Build a Registers snapshot from a Cpu6502State proto message."""
+    return Registers(
+        a=state.a,
+        x=state.x,
+        y=state.y,
+        sp=state.sp,
+        pc=state.pc,
+        p=state.p,
+        in_nmi_handler=state.in_nmi_handler,
+        in_irq_handler=state.in_irq_handler,
+        nmi_pending=state.nmi_pending,
+        irq_pending=state.irq_pending,
+        device_irq_flags=state.device_irq_flags,
+        device_nmi_flags=state.device_nmi_flags,
+    )
+
+
 class CPU:
     """6502 CPU register access.
 
-    Provides both read and write access to CPU registers with
-    property-based syntax.
+    Reads return a coherent snapshot; writes are atomic and return the
+    resulting snapshot.
 
     Usage:
-        # Read all registers
+        # Read all registers as one coherent snapshot (one request)
         regs = bbc.cpu.registers
-        print(f"A={regs.a:02X} X={regs.x:02X} PC={regs.pc:04X}")
+        print(regs)                     # A=.. X=.. ... PC=.. P=.. [flags]
+        if regs.status.carry:
+            ...
 
-        # Read individual registers
+        # Convenience single-register access (each read is its own snapshot)
         if bbc.cpu.a == 0:
             ...
 
-        # Write registers
+        # Atomic partial write; returns the complete new register state
+        new = bbc.cpu.update(pc=0xC000, a=0x42)
+
+        # The individual setters route through update()
         bbc.cpu.pc = 0xC000
-        bbc.cpu.a = 0x42
     """
 
     def __init__(self, stub: debugger_pb2_grpc.DebuggerControlStub):
@@ -136,22 +182,9 @@ class CPU:
 
     @property
     def registers(self) -> Registers:
-        """Read all registers at once."""
+        """Read all registers as one coherent snapshot."""
         response = self._stub.Get6502State(debugger_pb2.Get6502StateRequest())
-        return Registers(
-            a=response.a,
-            x=response.x,
-            y=response.y,
-            sp=response.sp,
-            pc=response.pc,
-            p=response.p,
-            in_nmi_handler=response.in_nmi_handler,
-            in_irq_handler=response.in_irq_handler,
-            nmi_pending=response.nmi_pending,
-            irq_pending=response.irq_pending,
-            device_irq_flags=response.device_irq_flags,
-            device_nmi_flags=response.device_nmi_flags,
-        )
+        return _registers_from_proto(response)
 
     # Individual register properties (read)
 
@@ -189,40 +222,44 @@ class CPU:
 
     @a.setter
     def a(self, value: int) -> None:
-        self._write(a=value)
+        self.update(a=value)
 
     @x.setter
     def x(self, value: int) -> None:
-        self._write(x=value)
+        self.update(x=value)
 
     @y.setter
     def y(self, value: int) -> None:
-        self._write(y=value)
+        self.update(y=value)
 
     @sp.setter
     def sp(self, value: int) -> None:
-        self._write(sp=value)
+        self.update(sp=value)
 
     @pc.setter
     def pc(self, value: int) -> None:
-        self._write(pc=value)
+        self.update(pc=value)
 
     @p.setter
     def p(self, value: int) -> None:
-        self._write(p=value)
+        self.update(p=value)
 
-    def _write(
+    def update(
         self,
+        *,
         a: int | None = None,
         x: int | None = None,
         y: int | None = None,
         sp: int | None = None,
         pc: int | None = None,
         p: int | None = None,
-    ) -> None:
-        """Write one or more registers.
+    ) -> Registers:
+        """Atomically write one or more registers and return the new snapshot.
 
-        Only the registers that are explicitly provided will be modified.
+        Only the registers explicitly provided are modified; the rest are left
+        unchanged. The server applies the writes and reads back the resulting
+        state as a single operation, so the returned ``Registers`` is a
+        coherent post-write snapshot -- there is no separate read and no race.
         """
         request = debugger_pb2.Set6502StateRequest()
         if a is not None:
@@ -238,6 +275,4 @@ class CPU:
         if p is not None:
             request.p = p
 
-        response = self._stub.Set6502State(request)
-        if not response.success:
-            raise DebuggerError("Failed to write registers")
+        return _registers_from_proto(self._stub.Set6502State(request))

@@ -176,7 +176,7 @@ class DebuggerControlStub(object):
         self.Set6502State = channel.unary_unary(
                 '/beebium.DebuggerControl/Set6502State',
                 request_serializer=debugger__pb2.Set6502StateRequest.SerializeToString,
-                response_deserializer=debugger__pb2.Set6502StateResponse.FromString,
+                response_deserializer=debugger__pb2.Cpu6502State.FromString,
                 _registered_method=True)
 
 
@@ -479,7 +479,7 @@ def add_DebuggerControlServicer_to_server(servicer, server):
             'Set6502State': grpc.unary_unary_rpc_method_handler(
                     servicer.Set6502State,
                     request_deserializer=debugger__pb2.Set6502StateRequest.FromString,
-                    response_serializer=debugger__pb2.Set6502StateResponse.SerializeToString,
+                    response_serializer=debugger__pb2.Cpu6502State.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1185,7 +1185,7 @@ class DebuggerControl(object):
             target,
             '/beebium.DebuggerControl/Set6502State',
             debugger__pb2.Set6502StateRequest.SerializeToString,
-            debugger__pb2.Set6502StateResponse.FromString,
+            debugger__pb2.Cpu6502State.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1337,7 +1337,7 @@ class ParasiteDebuggerControlStub(object):
         self.Set6502State = channel.unary_unary(
                 '/beebium.ParasiteDebuggerControl/Set6502State',
                 request_serializer=debugger__pb2.Set6502StateRequest.SerializeToString,
-                response_deserializer=debugger__pb2.Set6502StateResponse.FromString,
+                response_deserializer=debugger__pb2.Cpu6502State.FromString,
                 _registered_method=True)
 
 
@@ -1634,7 +1634,7 @@ def add_ParasiteDebuggerControlServicer_to_server(servicer, server):
             'Set6502State': grpc.unary_unary_rpc_method_handler(
                     servicer.Set6502State,
                     request_deserializer=debugger__pb2.Set6502StateRequest.FromString,
-                    response_serializer=debugger__pb2.Set6502StateResponse.SerializeToString,
+                    response_serializer=debugger__pb2.Cpu6502State.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -2341,7 +2341,7 @@ class ParasiteDebuggerControl(object):
             target,
             '/beebium.ParasiteDebuggerControl/Set6502State',
             debugger__pb2.Set6502StateRequest.SerializeToString,
-            debugger__pb2.Set6502StateResponse.FromString,
+            debugger__pb2.Cpu6502State.FromString,
             options,
             channel_credentials,
             insecure,

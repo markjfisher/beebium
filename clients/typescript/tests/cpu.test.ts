@@ -97,7 +97,7 @@ describe("CPU", () => {
     describe("setA", () => {
         it("sends Set6502State with only a field", async () => {
             const stub = createMockStub({
-                set6502State: () => ({ success: true }),
+                set6502State: () => FULL_STATE,
             });
             const cpu = new CPU(stub as any);
             await cpu.setA(0x99);
@@ -111,7 +111,7 @@ describe("CPU", () => {
     describe("setPc", () => {
         it("sends Set6502State with only pc field", async () => {
             const stub = createMockStub({
-                set6502State: () => ({ success: true }),
+                set6502State: () => FULL_STATE,
             });
             const cpu = new CPU(stub as any);
             await cpu.setPc(0xD000);
@@ -125,7 +125,7 @@ describe("CPU", () => {
     describe("setX", () => {
         it("sends Set6502State with only x field", async () => {
             const stub = createMockStub({
-                set6502State: () => ({ success: true }),
+                set6502State: () => FULL_STATE,
             });
             const cpu = new CPU(stub as any);
             await cpu.setX(0x55);
@@ -139,7 +139,7 @@ describe("CPU", () => {
     describe("setY", () => {
         it("sends Set6502State with only y field", async () => {
             const stub = createMockStub({
-                set6502State: () => ({ success: true }),
+                set6502State: () => FULL_STATE,
             });
             const cpu = new CPU(stub as any);
             await cpu.setY(0xAA);
@@ -153,7 +153,7 @@ describe("CPU", () => {
     describe("setSp", () => {
         it("sends Set6502State with only sp field", async () => {
             const stub = createMockStub({
-                set6502State: () => ({ success: true }),
+                set6502State: () => FULL_STATE,
             });
             const cpu = new CPU(stub as any);
             await cpu.setSp(0xFD);
@@ -167,7 +167,7 @@ describe("CPU", () => {
     describe("setP", () => {
         it("sends Set6502State with only p field", async () => {
             const stub = createMockStub({
-                set6502State: () => ({ success: true }),
+                set6502State: () => FULL_STATE,
             });
             const cpu = new CPU(stub as any);
             await cpu.setP(0x30);
@@ -181,19 +181,22 @@ describe("CPU", () => {
     describe("setRegisters", () => {
         it("sends partial fields correctly", async () => {
             const stub = createMockStub({
-                set6502State: () => ({ success: true }),
+                set6502State: () => FULL_STATE,
             });
             const cpu = new CPU(stub as any);
-            await cpu.setRegisters({ a: 0x10, pc: 0x8000 });
+            const result = await cpu.setRegisters({ a: 0x10, pc: 0x8000 });
             expect(stub.set6502State).toHaveBeenCalledWith(
                 { a: 0x10, pc: 0x8000 },
                 expect.any(Function),
             );
+            // The write returns the complete new register snapshot the server
+            // read back atomically after applying it.
+            expect(result).toEqual(FULL_STATE);
         });
 
         it("does not send undefined fields", async () => {
             const stub = createMockStub({
-                set6502State: () => ({ success: true }),
+                set6502State: () => FULL_STATE,
             });
             const cpu = new CPU(stub as any);
             await cpu.setRegisters({ x: 0x77 });
@@ -205,7 +208,7 @@ describe("CPU", () => {
 
         it("sends all fields when all specified", async () => {
             const stub = createMockStub({
-                set6502State: () => ({ success: true }),
+                set6502State: () => FULL_STATE,
             });
             const cpu = new CPU(stub as any);
             await cpu.setRegisters({ a: 1, x: 2, y: 3, sp: 4, pc: 5, p: 6 });

@@ -44,7 +44,7 @@ service DebuggerControl {
 
     // CPU state
     rpc Get6502State(Get6502StateRequest) returns (Cpu6502State);
-    rpc Set6502State(Set6502StateRequest) returns (Set6502StateResponse);
+    rpc Set6502State(Set6502StateRequest) returns (Cpu6502State);
 }
 
 // Parasite (second processor) debugger service.
@@ -77,7 +77,7 @@ service ParasiteDebuggerControl {
     rpc ListWatchpoints(Empty) returns (ListWatchpointsResponse);
     rpc ClearWatchpoints(Empty) returns (ClearWatchpointsResponse);
     rpc Get6502State(Get6502StateRequest) returns (Cpu6502State);
-    rpc Set6502State(Set6502StateRequest) returns (Set6502StateResponse);
+    rpc Set6502State(Set6502StateRequest) returns (Cpu6502State);
 }
 
 // BBC Micro device state inspection.
@@ -326,10 +326,6 @@ message Set6502StateRequest {
     optional uint32 sp = 4;
     optional uint32 pc = 5;
     optional uint32 p = 6;
-}
-
-message Set6502StateResponse {
-    bool success = 1;
 }
 
 // Memory region discovery and access messages

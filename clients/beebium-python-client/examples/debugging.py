@@ -17,6 +17,10 @@ def demo(bbc: Beebium) -> None:
     # Registers has a canonical __str__ (A/X/Y/SP/PC/P + flags), so just print it.
     print(f"stopped: {bbc.cpu.registers}")
 
+    # Writes are atomic and return the complete resulting snapshot (no re-read).
+    after = bbc.cpu.update(a=0x41, x=0x42)
+    print(f"after update: A=${after.a:02X} X=${after.x:02X}  carry={after.status.carry}")
+
     # Single-step three instructions.
     for _ in range(3):
         bbc.debugger.step()

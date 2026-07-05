@@ -182,8 +182,14 @@ export class CPU {
         await this.setRegisters({ p: value });
     }
 
-    /** Set one or more CPU registers. Only specified fields are updated. */
-    async setRegisters(regs: Partial<Registers>): Promise<void> {
+    /**
+     * Set one or more CPU registers. Only specified fields are updated.
+     *
+     * Returns the complete new register state, read back atomically by the
+     * server after applying the write (in the same request, no separate
+     * fetch), so it reflects the write with no race against a running CPU.
+     */
+    async setRegisters(regs: Partial<Registers>): Promise<Registers> {
         const request: Record<string, number | undefined> = {};
         if (regs.a !== undefined) request.a = regs.a;
         if (regs.x !== undefined) request.x = regs.x;
@@ -192,10 +198,11 @@ export class CPU {
         if (regs.pc !== undefined) request.pc = regs.pc;
         if (regs.p !== undefined) request.p = regs.p;
 
-        await promisify<Record<string, number | undefined>, { success: boolean }>(
+        const response = await promisify<Record<string, number | undefined>, Cpu6502State>(
             this.stub as unknown as Record<string, Function>,
             "set6502State",
             request,
         );
+        return toRegisters(response);
     }
 }

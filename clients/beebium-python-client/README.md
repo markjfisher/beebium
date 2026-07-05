@@ -141,21 +141,22 @@ print(f"Running: {state.is_running}, Cycles: {state.cycle_count}")
 ### CPU Register Access
 
 ```python
-# Read registers
+# Read all registers as one coherent snapshot (one request)
 regs = bbc.cpu.registers
-print(f"A={regs.a:02X} X={regs.x:02X} Y={regs.y:02X}")
-print(f"PC={regs.pc:04X} SP={regs.sp:02X} P={regs.p:02X}")
+print(regs)  # A=.. X=.. Y=.. SP=.. PC=.. P=.. [flags]
 
-# Individual register access
+# Convenience single-register access (each read is its own snapshot)
 if bbc.cpu.a == 0:
     print("Accumulator is zero")
 
-# Write registers
-bbc.cpu.pc = 0xC000
-bbc.cpu.a = 0x42
+# Atomic partial write; returns the complete new register snapshot
+new = bbc.cpu.update(pc=0xC000, a=0x42)
 
-# Flag access
-if regs.zero:
+# The individual setters route through update()
+bbc.cpu.pc = 0xC000
+
+# Status flags live on the decoded status register
+if regs.status.zero:
     print("Zero flag is set")
 ```
 

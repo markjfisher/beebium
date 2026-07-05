@@ -126,7 +126,7 @@ public:
     grpc::Status Get6502State(grpc::ServerContext* ctx, const Get6502StateRequest* req, Cpu6502State* resp) override
     { return impl_.Get6502State(ctx, req, resp); }
 
-    grpc::Status Set6502State(grpc::ServerContext* ctx, const Set6502StateRequest* req, Set6502StateResponse* resp) override
+    grpc::Status Set6502State(grpc::ServerContext* ctx, const Set6502StateRequest* req, Cpu6502State* resp) override
     { return impl_.Set6502State(ctx, req, resp); }
 
 #undef FORWARD_UNARY

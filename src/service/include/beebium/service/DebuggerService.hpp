@@ -224,7 +224,7 @@ public:
     grpc::Status Set6502State(
         grpc::ServerContext* context,
         const Set6502StateRequest* request,
-        Set6502StateResponse* response) override;
+        Cpu6502State* response) override;
 
     // Event streaming
     grpc::Status WatchExecutionState(
@@ -233,6 +233,7 @@ public:
         grpc::ServerWriter<ExecutionStateEvent>* writer) override;
 
 private:
+    void populate_6502_state(Cpu6502State* response);
     void fill_execution_state(ExecutionState* state);
     void update_breakpoint_entries();
     void update_watchpoint_entries();
@@ -1248,13 +1249,9 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::WatchExecutionState(
 //////////////////////////////////////////////////////////////////////////////
 
 template<typename MachineType>
-grpc::Status DebuggerControlServiceImpl<MachineType>::Get6502State(
-    grpc::ServerContext* /*context*/,
-    const Get6502StateRequest* /*request*/,
+void DebuggerControlServiceImpl<MachineType>::populate_6502_state(
     Cpu6502State* response) {
-
-    std::lock_guard<std::mutex> lock(mutex_);
-
+    // Caller must hold mutex_.
     response->set_a(machine_.a());
     response->set_x(machine_.x());
     response->set_y(machine_.y());
@@ -1272,7 +1269,16 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Get6502State(
                               && !(machine_.p() & 0x04));
     response->set_device_irq_flags(machine_.cpu().device_irq_flags);
     response->set_device_nmi_flags(machine_.cpu().device_nmi_flags);
+}
 
+template<typename MachineType>
+grpc::Status DebuggerControlServiceImpl<MachineType>::Get6502State(
+    grpc::ServerContext* /*context*/,
+    const Get6502StateRequest* /*request*/,
+    Cpu6502State* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    populate_6502_state(response);
     return grpc::Status::OK;
 }
 
@@ -1280,7 +1286,7 @@ template<typename MachineType>
 grpc::Status DebuggerControlServiceImpl<MachineType>::Set6502State(
     grpc::ServerContext* /*context*/,
     const Set6502StateRequest* request,
-    Set6502StateResponse* response) {
+    Cpu6502State* response) {
 
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -1303,7 +1309,9 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Set6502State(
         machine_.set_p(static_cast<uint8_t>(request->p()));
     }
 
-    response->set_success(true);
+    // Read back the resulting state under the same lock, so the write and the
+    // returned snapshot are atomic (no instruction can execute in between).
+    populate_6502_state(response);
     return grpc::Status::OK;
 }
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 import pytest
 
 from beebium.client import Beebium
+from beebium.client.cpu import Registers, StatusRegister
 from beebium.client.debugger import ExecutionStateEvent
 from beebium.client.exceptions import DebuggerError, InvalidConditionError
 from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
@@ -616,3 +617,42 @@ class TestCpuState:
         regs = stopped_bbc.cpu.registers
         assert regs.a == 0xAA
         assert regs.x == 0xBB
+
+    def test_update_returns_new_snapshot(self, stopped_bbc):
+        # update() writes atomically and returns the resulting snapshot -- the
+        # returned values reflect the write with no separate read.
+        regs = stopped_bbc.cpu.update(a=0x12, x=0x34, pc=0xC000)
+        assert isinstance(regs, Registers)
+        assert (regs.a, regs.x, regs.pc) == (0x12, 0x34, 0xC000)
+
+    def test_update_is_partial(self, stopped_bbc):
+        stopped_bbc.cpu.update(y=0x77)
+        before_y = stopped_bbc.cpu.registers.y
+        regs = stopped_bbc.cpu.update(a=0x66)  # y is left untouched
+        assert regs.a == 0x66
+        assert regs.y == before_y
+
+    def test_setters_route_through_update(self, stopped_bbc):
+        stopped_bbc.cpu.a = 0x5A
+        assert stopped_bbc.cpu.registers.a == 0x5A
+
+
+class TestStatusRegister:
+    """The processor status register value object (pure -- no server)."""
+
+    def test_flag_decoding(self):
+        status = StatusRegister(0b1000_0011)  # N, Z and C set
+        assert status.negative and status.zero and status.carry
+        assert not status.overflow and not status.decimal
+        assert not status.interrupt_disable and not status.break_flag
+
+    def test_str_is_conventional_flag_string(self):
+        assert str(StatusRegister(0b1000_0011)) == "Nv-bdiZC"
+
+    def test_int_returns_raw_byte(self):
+        assert int(StatusRegister(0x42)) == 0x42
+
+    def test_registers_status_property(self):
+        regs = Registers(a=0, x=0, y=0, sp=0, pc=0, p=0x40)  # V set
+        assert isinstance(regs.status, StatusRegister)
+        assert regs.status.overflow and not regs.status.carry

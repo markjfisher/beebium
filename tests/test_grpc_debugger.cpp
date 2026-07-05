@@ -488,12 +488,15 @@ TEST_CASE("DebuggerControl Set6502State sets individual registers", "[grpc][debu
     beebium::Set6502StateRequest request;
     request.set_a(0xAA);
     request.set_x(0xBB);
-    beebium::Set6502StateResponse response;
+    beebium::Cpu6502State response;
 
     auto status = fixture.debugger().Set6502State(&context, request, &response);
 
     REQUIRE(status.ok());
-    CHECK(response.success());
+
+    // The response is the atomically read-back state reflecting the writes.
+    CHECK(response.a() == 0xAA);
+    CHECK(response.x() == 0xBB);
 
     // Check the values were set
     CHECK(fixture.machine().a() == 0xAA);
@@ -506,12 +509,12 @@ TEST_CASE("DebuggerControl Set6502State can set PC", "[grpc][debugger]") {
     grpc::ClientContext context;
     beebium::Set6502StateRequest request;
     request.set_pc(0xC000);
-    beebium::Set6502StateResponse response;
+    beebium::Cpu6502State response;
 
     auto status = fixture.debugger().Set6502State(&context, request, &response);
 
     REQUIRE(status.ok());
-    CHECK(response.success());
+    CHECK(response.pc() == 0xC000);
     CHECK(fixture.machine().pc() == 0xC000);
 }
 
@@ -603,7 +606,7 @@ TEST_CASE("Sequence counter increments on register write", "[grpc][debugger]") {
         grpc::ClientContext context;
         beebium::Set6502StateRequest request;
         request.set_a(0x99);
-        beebium::Set6502StateResponse response;
+        beebium::Cpu6502State response;
         fixture.debugger().Set6502State(&context, request, &response);
     }
 
