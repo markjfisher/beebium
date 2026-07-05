@@ -185,7 +185,11 @@ data = bbc.memory.address.peek[0xFE40:0xFE50]
 data = bbc.memory.address.bus.read(0x1000, 16)
 bbc.memory.address.bus.write(0x2000, b"HELLO")
 
-# Typed access using struct format strings
+# 16-bit little-endian words -- follow a 6502 pointer or vector
+oswrch = bbc.memory.address.peek.word(0x020E)          # read the WRCHV vector
+bbc.memory.address.bus.set_word(0x0070, 0x1234)        # write a 16-bit pointer
+
+# Typed access using struct format strings (other widths / byte orders)
 word = bbc.memory.address.bus.cast("<H")[0x0070]       # Read 16-bit little-endian
 bbc.memory.address.bus.cast("<H")[0x0070] = 0x1234     # Write 16-bit little-endian
 words = bbc.memory.address.bus.cast("<H")[0x70:0x78]   # Read 4 words as tuple

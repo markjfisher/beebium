@@ -35,7 +35,7 @@ def demo(bbc: Beebium) -> None:
     # every write. PRINT 6*7 prints "42", and '4' (&34) never appears in the
     # typed line, so we stop on the printed result, not on our keystroke echoes.
     bbc.run_until_or_timeout(lambda: screen_contains(bbc, ">"), emulated_seconds=3.0)
-    oswrch = bbc.memory.address.peek[0x020E] | (bbc.memory.address.peek[0x020F] << 8)
+    oswrch = bbc.memory.address.peek.word(0x020E)  # follow the WRCHV pointer
     bbc.keyboard.type("PRINT 6*7\r")
 
     # A breakpoint used as a context manager is removed again on exit.

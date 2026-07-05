@@ -186,9 +186,36 @@ class TestBusMemoryAccessor:
         memory.address.bus.write(0x1000, b"\x01\x02\x03\x04")
         mock_stub.WriteMemory.assert_called_once()
 
+    def test_word_reads_little_endian(self, memory, mock_stub):
+        """word() reads a 16-bit little-endian value (two bytes)."""
+        mock_stub.ReadMemory.return_value = MockResponse(data=b"\x34\x12")
+        assert memory.address.bus.word(0x020E) == 0x1234
+        request = mock_stub.ReadMemory.call_args[0][0]
+        assert request.address == 0x020E
+        assert request.length == 2
+
+    def test_set_word_writes_little_endian(self, memory, mock_stub):
+        """set_word() writes a 16-bit little-endian value."""
+        memory.address.bus.set_word(0x0070, 0x1234)
+        request = mock_stub.WriteMemory.call_args[0][0]
+        assert request.address == 0x0070
+        assert request.data == b"\x34\x12"
+
+    def test_set_word_rejects_out_of_range(self, memory):
+        """set_word() rejects values outside 0-65535."""
+        with pytest.raises(ValueError):
+            memory.address.bus.set_word(0x0070, 0x10000)
+
 
 class TestPeekMemoryAccessor:
     """Tests for PeekMemoryAccessor read-only operations."""
+
+    def test_word_is_side_effect_free(self, memory, mock_stub):
+        """word() on the peek accessor reads via Peek, not Read."""
+        mock_stub.PeekMemory.return_value = MockResponse(data=b"\xee\xff")
+        assert memory.address.peek.word(0xFFFC) == 0xFFEE
+        mock_stub.PeekMemory.assert_called_once()
+        mock_stub.ReadMemory.assert_not_called()
 
     def test_single_byte_read(self, memory, mock_stub):
         """Reading single address returns an int."""

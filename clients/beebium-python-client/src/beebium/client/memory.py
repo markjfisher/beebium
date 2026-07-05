@@ -199,6 +199,16 @@ class MemoryReader(MemoryAccessorBase):
         """
         return self._read_bytes(address, length)
 
+    def word(self, address: int) -> int:
+        """Read a 16-bit little-endian word (two bytes) at ``address``.
+
+        6502 pointers and vectors are little-endian byte pairs, so this is the
+        natural way to follow one -- e.g. ``peek.word(0x020E)`` reads the WRCHV
+        vector. Use :meth:`cast` for other widths or byte orders.
+        """
+        data = self._read_bytes(address, 2)
+        return data[0] | (data[1] << 8)
+
     def cast(self, fmt: str) -> TypedMemoryReader:
         """Return a typed view of memory using a struct format string.
 
@@ -272,6 +282,15 @@ class MemoryWriter(MemoryAccessorBase):
             data: The bytes to write.
         """
         self._write_bytes(address, bytes(data))
+
+    def set_word(self, address: int, value: int) -> None:
+        """Write a 16-bit little-endian word (two bytes) at ``address``.
+
+        The 6502 counterpart of :meth:`MemoryReader.word`.
+        """
+        if not (0 <= value <= 0xFFFF):
+            raise ValueError(f"word value must be 0-65535, got {value}")
+        self._write_bytes(address, bytes([value & 0xFF, (value >> 8) & 0xFF]))
 
     def load(self, address: int, filepath: str | Path, max_length: int = 0x10000) -> int:
         """Load a binary file into memory starting at address.
