@@ -130,14 +130,11 @@ class MachineDiscovery:
             from zeroconf import ServiceBrowser, Zeroconf
         except ImportError as e:
             raise ImportError(
-                "zeroconf is required for mDNS discovery. "
-                "Install it with: pip install beebium[discovery]"
+                "zeroconf is required for mDNS discovery. Install it with: pip install beebium[discovery]"
             ) from e
 
         self._zeroconf = Zeroconf()
-        self._browser = ServiceBrowser(
-            self._zeroconf, SERVICE_TYPE, cast("ServiceListener", self)
-        )
+        self._browser = ServiceBrowser(self._zeroconf, SERVICE_TYPE, cast("ServiceListener", self))
 
     def stop(self) -> None:
         """Stop discovery and release resources."""

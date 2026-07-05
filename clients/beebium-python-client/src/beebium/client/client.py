@@ -497,7 +497,10 @@ class Beebium:
         self.debugger.step_cycles(cycles)
 
     def run_until_or_timeout(
-        self, predicate, emulated_seconds: float, *,
+        self,
+        predicate,
+        emulated_seconds: float,
+        *,
         chunk_seconds: float = 0.1,
     ) -> bool:
         """Run until predicate() returns True or the emulated time budget expires.
@@ -532,7 +535,8 @@ class Beebium:
                     deadline_cycles,
                 )
                 with self.debugger.breakpoint(
-                    0x0000, end_address=0x10000,
+                    0x0000,
+                    end_address=0x10000,
                     condition=f"cycles >= {chunk_target}",
                 ):
                     self.debugger.ensure_running()
@@ -556,10 +560,12 @@ class Beebium:
             try:
                 # Import here to avoid circular dependency
                 from beebium.client.system import ShutdownMode
+
                 response = self.system.request_shutdown(mode=ShutdownMode.GRACEFUL)
                 # If accepted, give it a brief moment to take effect
                 if response.accepted:
                     import time
+
                     time.sleep(0.1)  # Brief wait for graceful shutdown to start
             except (BeebiumError, grpc.RpcError):
                 # If RPC fails, fall back to SIGTERM

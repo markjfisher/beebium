@@ -124,7 +124,8 @@ class TubeSystem:
                     deadline_cycles,
                 )
                 with self._host.debugger.breakpoint(
-                    0x0000, end_address=0x10000,
+                    0x0000,
+                    end_address=0x10000,
                     condition=f"cycles >= {chunk_target}",
                     stop_counterpart=True,
                 ):

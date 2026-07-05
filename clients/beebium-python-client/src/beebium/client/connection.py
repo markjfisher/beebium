@@ -60,9 +60,7 @@ class Connection:
         self._disc_stub: disc_pb2_grpc.DiscServiceStub | None = None
         self._econet_stub: econet_pb2_grpc.EconetServiceStub | None = None
         self._serial_stub: serial_pb2_grpc.SerialServiceStub | None = None
-        self._extension_rpc_stub: (
-            extension_rpc_pb2_grpc.ExtensionRpcStub | None
-        ) = None
+        self._extension_rpc_stub: extension_rpc_pb2_grpc.ExtensionRpcStub | None = None
         self._econet_transport_stub: econet_transport_pb2_grpc.EconetTransportServiceStub | None = None
         self._extension_ui_stub: extension_ui_pb2_grpc.ExtensionUiServiceStub | None = None
         self._indicator_stub: indicator_pb2_grpc.IndicatorServiceStub | None = None
@@ -72,9 +70,7 @@ class Connection:
         self._tube_stub: tube_pb2_grpc.TubeServiceStub | None = None
         self._video_stub: video_pb2_grpc.VideoServiceStub | None = None
         self._audio_stub: audio_pb2_grpc.AudioServiceStub | None = None
-        self._peripheral_extension_stub: (
-            peripheral_extension_pb2_grpc.PeripheralExtensionServiceStub | None
-        ) = None
+        self._peripheral_extension_stub: peripheral_extension_pb2_grpc.PeripheralExtensionServiceStub | None = None
 
         self._connect(timeout)
 
@@ -89,8 +85,7 @@ class Connection:
             self._channel.close()
             self._channel = None
             raise ConnectionError(
-                f"Failed to connect to beebium server at {self._target} "
-                f"within {timeout} seconds"
+                f"Failed to connect to beebium server at {self._target} within {timeout} seconds"
             ) from None
 
         # Create service stubs
@@ -100,9 +95,7 @@ class Connection:
         self._disc_stub = disc_pb2_grpc.DiscServiceStub(self._channel)
         self._econet_stub = econet_pb2_grpc.EconetServiceStub(self._channel)
         self._serial_stub = serial_pb2_grpc.SerialServiceStub(self._channel)
-        self._extension_rpc_stub = extension_rpc_pb2_grpc.ExtensionRpcStub(
-            self._channel
-        )
+        self._extension_rpc_stub = extension_rpc_pb2_grpc.ExtensionRpcStub(self._channel)
         self._econet_transport_stub = econet_transport_pb2_grpc.EconetTransportServiceStub(self._channel)
         self._extension_ui_stub = extension_ui_pb2_grpc.ExtensionUiServiceStub(self._channel)
         self._indicator_stub = indicator_pb2_grpc.IndicatorServiceStub(self._channel)
@@ -112,9 +105,7 @@ class Connection:
         self._tube_stub = tube_pb2_grpc.TubeServiceStub(self._channel)
         self._video_stub = video_pb2_grpc.VideoServiceStub(self._channel)
         self._audio_stub = audio_pb2_grpc.AudioServiceStub(self._channel)
-        self._peripheral_extension_stub = (
-            peripheral_extension_pb2_grpc.PeripheralExtensionServiceStub(self._channel)
-        )
+        self._peripheral_extension_stub = peripheral_extension_pb2_grpc.PeripheralExtensionServiceStub(self._channel)
 
     @property
     def target(self) -> str:

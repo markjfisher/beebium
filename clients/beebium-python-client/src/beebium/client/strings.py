@@ -88,9 +88,7 @@ def pascal_str(s: str, encoding: str = "ascii") -> bytes:
     """
     encoded = s.encode(encoding)
     if len(encoded) > 255:
-        raise ValueError(
-            f"string too long for pascal_str: {len(encoded)} bytes (max 255)"
-        )
+        raise ValueError(f"string too long for pascal_str: {len(encoded)} bytes (max 255)")
     return bytes([len(encoded)]) + encoded
 
 
@@ -115,9 +113,7 @@ def parse_pascal_str(data: bytes, encoding: str = "ascii") -> str:
         raise IndexError("cannot parse pascal_str from empty data")
     length = data[0]
     if len(data) < 1 + length:
-        raise ValueError(
-            f"data too short: need {1 + length} bytes, got {len(data)}"
-        )
+        raise ValueError(f"data too short: need {1 + length} bytes, got {len(data)}")
     return data[1 : 1 + length].decode(encoding)
 
 

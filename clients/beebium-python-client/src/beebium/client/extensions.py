@@ -155,9 +155,7 @@ def _extension_info_from_proto(proto: pe_pb2.ExtensionInfo) -> ExtensionInfo:
         parameters=tuple(_parameter_schema_from_proto(p) for p in proto.parameters),
         description=proto.description,
         has_ui=proto.has_ui,
-        storage_devices=tuple(
-            _storage_device_from_proto(d) for d in proto.storage_devices
-        ),
+        storage_devices=tuple(_storage_device_from_proto(d) for d in proto.storage_devices),
     )
 
 
@@ -254,7 +252,9 @@ class Extensions:
         # Create from the resolved manifest name (the entry-point key), bound to
         # the resolved instance id -- so a string that was an id works too.
         return create_adapter(
-            info.name, PERIPHERAL_ENTRY_POINT_GROUP, self._channel,
+            info.name,
+            PERIPHERAL_ENTRY_POINT_GROUP,
+            self._channel,
             extension_id=info.id,
         )
 
@@ -263,9 +263,7 @@ class Extensions:
     @overload
     def get(self, key: type[A], default: None = None) -> A | None: ...
 
-    def get(
-        self, key: str | type[A], default: ExtensionAdapter | A | None = None
-    ) -> ExtensionAdapter | A | None:
+    def get(self, key: str | type[A], default: ExtensionAdapter | A | None = None) -> ExtensionAdapter | A | None:
         """Like ``self[key]`` but returns ``default`` instead of raising.
 
         Returns ``default`` when the extension is not loaded on the server or
@@ -277,6 +275,4 @@ class Extensions:
             return default
 
     def _require_loaded(self, key: str, *, requested: str) -> ExtensionInfo:
-        return resolve_loaded(
-            self.loaded, key, requested=requested, kind="extension"
-        )
+        return resolve_loaded(self.loaded, key, requested=requested, kind="extension")

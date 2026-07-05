@@ -141,9 +141,7 @@ class Aun(EconetTransportAdapter):
             EconetError: If the AUN backend is not active or the call fails.
         """
         request = aun_pb2.AunSetConnectedRequest(connected=connected)
-        response = self._invoke(
-            "SetConnected", request, aun_pb2.AunSetConnectedResponse()
-        )
+        response = self._invoke("SetConnected", request, aun_pb2.AunSetConnectedResponse())
         if not response.success:
             raise EconetError(response.error)
 
@@ -182,8 +180,6 @@ class Aun(EconetTransportAdapter):
             EconetError: If the call fails.
         """
         request = aun_pb2.AunRemovePeerRequest(net=net, stn=stn)
-        response = self._invoke(
-            "RemovePeer", request, aun_pb2.AunRemovePeerResponse()
-        )
+        response = self._invoke("RemovePeer", request, aun_pb2.AunRemovePeerResponse())
         if not response.success:
             raise EconetError(response.error)

@@ -94,9 +94,7 @@ def cells_from_region(region: bytes, screen_start: int) -> list[bytes]:
         25 rows of 40 raw bytes each, in display order (top-left first).
     """
     if len(region) < MODE7_REGION_SIZE:
-        raise ValueError(
-            f"region must be at least {MODE7_REGION_SIZE} bytes, got {len(region)}"
-        )
+        raise ValueError(f"region must be at least {MODE7_REGION_SIZE} bytes, got {len(region)}")
     mask = MODE7_REGION_SIZE - 1
     offset = screen_start & mask
     rows: list[bytes] = []
@@ -140,9 +138,7 @@ def _like(template: RowT, byte_value: bytes, str_value: str) -> RowT:
     The isinstance check guarantees the correct branch; the cast tells the type
     checker what it cannot infer -- that the result matches the template type.
     """
-    return cast(
-        RowT, byte_value if isinstance(template, (bytes, bytearray)) else str_value
-    )
+    return cast(RowT, byte_value if isinstance(template, (bytes, bytearray)) else str_value)
 
 
 def _blank(like: RowT) -> RowT:

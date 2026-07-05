@@ -69,10 +69,7 @@ class VideoUlaState:
         mode_desc = "Teletext" if self.teletext_mode else f"Bitmap (LW={self.line_width_mode})"
         clock = "2MHz" if self.fast_clock else "1MHz"
         palette_str = " ".join(f"{p:X}" for p in self.palette)
-        return (
-            f"Control={self.control:02X} ({mode_desc}, {clock})\n"
-            f"Palette: {palette_str}"
-        )
+        return f"Control={self.control:02X} ({mode_desc}, {clock})\nPalette: {palette_str}"
 
 
 class VideoUlaPalette:

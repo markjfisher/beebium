@@ -202,7 +202,7 @@ class Video:
         count = 0
         for proto_frame in response:
             regions = ()
-            if hasattr(proto_frame, 'regions'):
+            if hasattr(proto_frame, "regions"):
                 regions = tuple(
                     DisplayRegion(
                         start_line=r.start_line,
@@ -233,9 +233,7 @@ class Video:
             if max_frames is not None and count >= max_frames:
                 break
 
-    def start_background_stream(
-        self, callback: Callable[[Frame], None]
-    ) -> FrameStreamHandle:
+    def start_background_stream(self, callback: Callable[[Frame], None]) -> FrameStreamHandle:
         """Start streaming frames in a background thread.
 
         Args:

@@ -39,7 +39,7 @@ SCREEN_MODES = {
     4: (0x5800, 320, 32, 40),  # 320x256 2-colour, 40 chars
     5: (0x5800, 160, 32, 20),  # 160x256 4-colour, 20 chars
     6: (0x6000, 320, 25, 40),  # 320x200 2-colour (text), 40 chars
-    7: (0x7C00, 40, 25, 40),   # Teletext mode, 40 chars
+    7: (0x7C00, 40, 25, 40),  # Teletext mode, 40 chars
 }
 
 # The BBC BASIC prompt character, expected at the start of a line.

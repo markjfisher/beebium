@@ -255,9 +255,7 @@ class Keyboard:
             shift_lock=response.shift_lock_on,
         )
 
-    def tap_caps_lock(
-        self, *, timeout_cycles: int = _LOCK_TAP_TIMEOUT_CYCLES
-    ) -> None:
+    def tap_caps_lock(self, *, timeout_cycles: int = _LOCK_TAP_TIMEOUT_CYCLES) -> None:
         """Tap the CAPS LOCK key, toggling the MOS caps-lock state.
 
         Polls the logical lock latch (via :meth:`get_lock_state`) until it
@@ -282,9 +280,7 @@ class Keyboard:
             timeout_cycles=timeout_cycles,
         )
 
-    def tap_shift_lock(
-        self, *, timeout_cycles: int = _LOCK_TAP_TIMEOUT_CYCLES
-    ) -> None:
+    def tap_shift_lock(self, *, timeout_cycles: int = _LOCK_TAP_TIMEOUT_CYCLES) -> None:
         """Tap the SHIFT LOCK key, toggling the MOS shift-lock state.
 
         See :meth:`tap_caps_lock` for the polling, running-mode
@@ -393,8 +389,7 @@ class Keyboard:
         client = self._require_client("text_input()")
         if not client.debugger.is_running:
             raise RuntimeError(
-                "text_input() requires a running emulator. Call "
-                "bbc.debugger.run() before entering the with-block."
+                "text_input() requires a running emulator. Call bbc.debugger.run() before entering the with-block."
             )
 
         # One latch query gives the exact starting state at any speed.
@@ -547,10 +542,7 @@ class Keyboard:
         """
         request = keyboard_pb2.GetAllKeyMappingsRequest()
         response = self._stub.GetAllKeyMappings(request)
-        return [
-            (entry.character, entry.ik_number, entry.needs_shift, entry.name)
-            for entry in response.mappings
-        ]
+        return [(entry.character, entry.ik_number, entry.needs_shift, entry.name) for entry in response.mappings]
 
     def is_typeable_on_server(self, text: str) -> bool:
         """Check if all characters in text can be typed (using server mapping).

@@ -176,6 +176,4 @@ class EconetTransport:
             return default
 
     def _require_loaded(self, key: str, *, requested: str) -> TransportInfo:
-        return resolve_loaded(
-            self.list(), key, requested=requested, kind="Econet transport"
-        )
+        return resolve_loaded(self.list(), key, requested=requested, kind="Econet transport")

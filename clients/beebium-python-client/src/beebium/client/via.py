@@ -170,9 +170,7 @@ class Via:
             print("Timer 1 is running")
     """
 
-    def __init__(
-        self, stub: debugger_pb2_grpc.DeviceInspectionStub, via_id: ViaId
-    ):
+    def __init__(self, stub: debugger_pb2_grpc.DeviceInspectionStub, via_id: ViaId):
         """Create a VIA interface.
 
         Args:

@@ -142,11 +142,16 @@ class ServerProcess:
             cmd.extend(["--sideways", f"15:rom:{self._basic_filepath}"])
 
         # Add provenance flags
-        cmd.extend([
-            "--provenance-type", "python-client",
-            "--provenance-uuid", self._provenance_instance_uuid,
-            "--provenance-version", beebium.__version__,
-        ])
+        cmd.extend(
+            [
+                "--provenance-type",
+                "python-client",
+                "--provenance-uuid",
+                self._provenance_instance_uuid,
+                "--provenance-version",
+                beebium.__version__,
+            ]
+        )
 
         # Add any extra arguments (e.g., --tube 65C02-3MHz)
         cmd.extend(self._extra_args)
@@ -254,10 +259,7 @@ class ServerProcess:
         """Write a mid-session crash report to stderr (captured by pytest)."""
         _, stderr_output = self._captured_output()
         detail = self._describe_exit(code) if code is not None else "unknown status"
-        report = (
-            f"\n[beebium] server {self._server_filepath} exited unexpectedly "
-            f"mid-session with {detail}."
-        )
+        report = f"\n[beebium] server {self._server_filepath} exited unexpectedly mid-session with {detail}."
         if stderr_output:
             report += f"\n[beebium] server stderr:\n{stderr_output}"
         print(report, file=sys.stderr, flush=True)
@@ -325,9 +327,7 @@ class ServerProcess:
             env_server = Path(env_path)
             if self._is_executable(env_server):
                 return env_server
-            raise ServerNotFoundError(
-                f"BEEBIUM_SERVER points to invalid path: {env_path}"
-            )
+            raise ServerNotFoundError(f"BEEBIUM_SERVER points to invalid path: {env_path}")
 
         # 3. PATH lookup
         exe_name = self._exe_name("beebium-model-b")
@@ -347,12 +347,14 @@ class ServerProcess:
             "cmake-build-release",
         ]
         if sys.platform == "win32":
-            build_dirs.extend([
-                "build-win-x64-release",
-                "build-win-x64-debug",
-                "out/build/x64-Release",
-                "out/build/x64-Debug",
-            ])
+            build_dirs.extend(
+                [
+                    "build-win-x64-release",
+                    "build-win-x64-debug",
+                    "out/build/x64-Release",
+                    "out/build/x64-Debug",
+                ]
+            )
 
         for build_dir in build_dirs:
             # On Windows with MSVC, executables are in Release/Debug subdirectories
@@ -370,8 +372,7 @@ class ServerProcess:
                     return candidate
 
         raise ServerNotFoundError(
-            "beebium-model-b not found. Set BEEBIUM_SERVER environment variable "
-            "or add beebium-model-b to PATH."
+            "beebium-model-b not found. Set BEEBIUM_SERVER environment variable or add beebium-model-b to PATH."
         )
 
     @staticmethod

@@ -360,8 +360,10 @@ class Debugger:
                 event = bbc.debugger.wait_for_stop()
         """
         bp_id = self.add_breakpoint(
-            address, end_address=end_address,
-            condition=condition, stop_counterpart=stop_counterpart,
+            address,
+            end_address=end_address,
+            condition=condition,
+            stop_counterpart=stop_counterpart,
             enabled=enabled,
         )
         try:
@@ -398,13 +400,15 @@ class Debugger:
                 stop_counterpart=bp.stop_counterpart,
                 hit_count=bp.hit_count,
                 enabled=bp.enabled,
-            ) for bp in response.breakpoints
+            )
+            for bp in response.breakpoints
         ]
 
     def enable_breakpoint(self, breakpoint_id: int) -> None:
         """Enable a breakpoint."""
         request = debugger_pb2.EnableBreakpointRequest(
-            id=breakpoint_id, enabled=True,
+            id=breakpoint_id,
+            enabled=True,
         )
         response = self._stub.EnableBreakpoint(request)
         if not response.success:
@@ -413,7 +417,8 @@ class Debugger:
     def disable_breakpoint(self, breakpoint_id: int) -> None:
         """Disable a breakpoint. Hit count and configuration are preserved."""
         request = debugger_pb2.EnableBreakpointRequest(
-            id=breakpoint_id, enabled=False,
+            id=breakpoint_id,
+            enabled=False,
         )
         response = self._stub.EnableBreakpoint(request)
         if not response.success:
@@ -484,9 +489,7 @@ class Debugger:
                 raise InvalidConditionError(e.details()) from e
             raise
         if not response.success:
-            raise DebuggerError(
-                f"Failed to add watchpoint at ${start_address:04X}-${end_address:04X}"
-            )
+            raise DebuggerError(f"Failed to add watchpoint at ${start_address:04X}-${end_address:04X}")
         return response.id
 
     @contextmanager
@@ -509,8 +512,11 @@ class Debugger:
                 event = bbc.debugger.wait_for_stop()
         """
         wp_id = self.add_watchpoint(
-            start_address, end_address, type,
-            condition=condition, stop_counterpart=stop_counterpart,
+            start_address,
+            end_address,
+            type,
+            condition=condition,
+            stop_counterpart=stop_counterpart,
             enabled=enabled,
         )
         try:
@@ -549,7 +555,8 @@ class Debugger:
     def enable_watchpoint(self, watchpoint_id: int) -> None:
         """Enable a watchpoint."""
         request = debugger_pb2.EnableWatchpointRequest(
-            id=watchpoint_id, enabled=True,
+            id=watchpoint_id,
+            enabled=True,
         )
         response = self._stub.EnableWatchpoint(request)
         if not response.success:
@@ -558,7 +565,8 @@ class Debugger:
     def disable_watchpoint(self, watchpoint_id: int) -> None:
         """Disable a watchpoint. Hit count and configuration are preserved."""
         request = debugger_pb2.EnableWatchpointRequest(
-            id=watchpoint_id, enabled=False,
+            id=watchpoint_id,
+            enabled=False,
         )
         response = self._stub.EnableWatchpoint(request)
         if not response.success:
@@ -580,9 +588,7 @@ class Debugger:
 
     # Event streaming
 
-    def watch_execution_state(
-        self, *, timeout: float = DEFAULT_TIMEOUT
-    ) -> Iterator[ExecutionStateEvent]:
+    def watch_execution_state(self, *, timeout: float = DEFAULT_TIMEOUT) -> Iterator[ExecutionStateEvent]:
         """Stream execution state change events from the server.
 
         The server sends the current state immediately, then pushes events
@@ -603,20 +609,14 @@ class Debugger:
         """
         request = debugger_pb2.WatchExecutionStateRequest()
         try:
-            for response in self._stub.WatchExecutionState(
-                request, timeout=timeout
-            ):
+            for response in self._stub.WatchExecutionState(request, timeout=timeout):
                 yield _to_execution_state_event(response)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                raise DebuggerError(
-                    f"Timed out waiting for execution state event after {timeout}s"
-                ) from None
+                raise DebuggerError(f"Timed out waiting for execution state event after {timeout}s") from None
             raise
 
-    def wait_for_stop(
-        self, *, timeout: float = DEFAULT_TIMEOUT
-    ) -> ExecutionStateEvent:
+    def wait_for_stop(self, *, timeout: float = DEFAULT_TIMEOUT) -> ExecutionStateEvent:
         """Wait for the machine to stop executing.
 
         Subscribes to the execution state stream and waits for a stopped
@@ -693,9 +693,7 @@ class Debugger:
             raise DebuggerError("Stream ended without stop")
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                raise DebuggerError(
-                    f"Timed out waiting for stop after {timeout}s"
-                ) from None
+                raise DebuggerError(f"Timed out waiting for stop after {timeout}s") from None
             raise
         finally:
             self.remove_breakpoint(bp_id)

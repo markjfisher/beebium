@@ -82,7 +82,7 @@ class SocketStatus:
     """One physical sideways socket on the running machine."""
 
     socket_index: int
-    label: str               # Physical label, e.g. "IC101" or "IC71"
+    label: str  # Physical label, e.g. "IC101" or "IC71"
     aliased_slots: tuple[int, ...]  # Logical slots this socket answers
     type: SlotType
     populated: bool
@@ -254,7 +254,9 @@ class Sideways:
                 machine has no sideways memory, ...).
         """
         request = sideways_pb2.ReadSlotDataRequest(
-            slot=slot, offset=offset, length=length,
+            slot=slot,
+            offset=offset,
+            length=length,
         )
         response = self._stub.ReadSlotData(request)
         if not response.success:
@@ -293,6 +295,7 @@ class Sideways:
 
 
 # --- Proto -> Python mapping ---
+
 
 def _map_status(response: sideways_pb2.GetSlotStatusResponse) -> SlotStatusReport:
     return SlotStatusReport(

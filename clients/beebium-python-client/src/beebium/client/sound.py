@@ -66,8 +66,7 @@ class SoundChannelState:
         if self.is_noise:
             mode = "White" if self.white_noise else "Periodic"
             return (
-                f"{self.channel_name}: Vol={self.volume} Rate={self.noise_rate} "
-                f"Mode={mode} LFSR={self.lfsr_state:04X}"
+                f"{self.channel_name}: Vol={self.volume} Rate={self.noise_rate} Mode={mode} LFSR={self.lfsr_state:04X}"
             )
         else:
             return (

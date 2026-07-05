@@ -278,4 +278,3 @@ class Econet:
         response = self._stub.DisableEconet(request)
         if not response.success:
             raise EconetError(response.error)
-

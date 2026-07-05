@@ -56,9 +56,11 @@ from beebium.client.exceptions import MemoryAccessError
 # Memory Region Info
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class MemoryRegionInfo:
     """Information about a memory region."""
+
     name: str
     base_address: int
     size: int
@@ -72,6 +74,7 @@ class MemoryRegionInfo:
 # =============================================================================
 # Base Classes for Memory Access
 # =============================================================================
+
 
 class MemoryAccessorBase:
     """Common base for memory accessors."""
@@ -113,9 +116,7 @@ class TypedMemoryReader:
                 raise ValueError("slice must have an explicit stop address")
             length = stop - start
             if length % self._size != 0:
-                raise ValueError(
-                    f"slice length {length} not a multiple of {self._size}"
-                )
+                raise ValueError(f"slice length {length} not a multiple of {self._size}")
             data = self._accessor.read(start, length)
             count = length // self._size
             return struct.unpack(f"<{count}{self._fmt[1:]}", data)
@@ -150,9 +151,7 @@ class TypedMemoryAccessor(TypedMemoryReader):
                 raise ValueError("slice must have an explicit stop address")
             length = stop - start
             if length % self._size != 0:
-                raise ValueError(
-                    f"slice length {length} not a multiple of {self._size}"
-                )
+                raise ValueError(f"slice length {length} not a multiple of {self._size}")
             expected_count = length // self._size
             if not isinstance(value, tuple) or len(value) != expected_count:
                 got = len(value) if isinstance(value, tuple) else 1
@@ -243,14 +242,10 @@ class MemoryWriter(MemoryAccessorBase):
                 self._write_bytes(address, bytes([value]))
             elif isinstance(value, (bytes, bytearray)):
                 if len(value) != 1:
-                    raise ValueError(
-                        f"single address write requires exactly 1 byte, got {len(value)}"
-                    )
+                    raise ValueError(f"single address write requires exactly 1 byte, got {len(value)}")
                 self._write_bytes(address, bytes(value))
             else:
-                raise TypeError(
-                    f"single address write requires int or bytes, not {type(value).__name__}"
-                )
+                raise TypeError(f"single address write requires int or bytes, not {type(value).__name__}")
         elif isinstance(address, slice):
             start = address.start or 0
             stop = address.stop
@@ -263,8 +258,7 @@ class MemoryWriter(MemoryAccessorBase):
                 raise TypeError("slice assignment requires bytes-like object")
             if len(value) != slice_length:
                 raise ValueError(
-                    f"slice assignment size mismatch: "
-                    f"slice is {slice_length} bytes, data is {len(value)} bytes"
+                    f"slice assignment size mismatch: slice is {slice_length} bytes, data is {len(value)} bytes"
                 )
             self._write_bytes(start, bytes(value))
         else:
@@ -317,20 +311,17 @@ class MemoryWriter(MemoryAccessorBase):
             fill_byte = value
         elif isinstance(value, (bytes, bytearray)):
             if len(value) != 1:
-                raise ValueError(
-                    f"fill value must be exactly 1 byte, got {len(value)}"
-                )
+                raise ValueError(f"fill value must be exactly 1 byte, got {len(value)}")
             fill_byte = value[0]
         else:
-            raise TypeError(
-                f"fill value must be int or bytes, not {type(value).__name__}"
-            )
+            raise TypeError(f"fill value must be int or bytes, not {type(value).__name__}")
         self._write_bytes(start, bytes([fill_byte] * length))
 
 
 # =============================================================================
 # Address Space Accessors (16-bit flat address space)
 # =============================================================================
+
 
 class PeekMemoryAccessor(MemoryReader):
     """Side-effect-free memory access (read-only).
@@ -422,6 +413,7 @@ class BusMemoryAccessor(MemoryReader, MemoryWriter):
 # PC-Context Accessors (for B+ shadow RAM routing)
 # =============================================================================
 
+
 class PCContextReader(MemoryReader):
     """Side-effect-free memory access with simulated PC context.
 
@@ -438,9 +430,7 @@ class PCContextReader(MemoryReader):
 
     def _read_bytes(self, address: int, length: int) -> bytes:
         """Read bytes using PeekMemory RPC with simulated PC."""
-        request = debugger_pb2.PeekMemoryRequest(
-            address=address, length=length, simulated_pc=self._pc
-        )
+        request = debugger_pb2.PeekMemoryRequest(address=address, length=length, simulated_pc=self._pc)
         response = self._stub.PeekMemory(request)
         return response.data
 
@@ -457,22 +447,16 @@ class PCContextAccessor(PCContextReader, MemoryWriter):
 
     def _read_bytes(self, address: int, length: int) -> bytes:
         """Read bytes using ReadMemory RPC with simulated PC."""
-        request = debugger_pb2.ReadMemoryRequest(
-            address=address, length=length, simulated_pc=self._pc
-        )
+        request = debugger_pb2.ReadMemoryRequest(address=address, length=length, simulated_pc=self._pc)
         response = self._stub.ReadMemory(request)
         return response.data
 
     def _write_bytes(self, address: int, data: bytes) -> None:
         """Write bytes using WriteMemory RPC with simulated PC."""
-        request = debugger_pb2.WriteMemoryRequest(
-            address=address, data=data, simulated_pc=self._pc
-        )
+        request = debugger_pb2.WriteMemoryRequest(address=address, data=data, simulated_pc=self._pc)
         response = self._stub.WriteMemory(request)
         if not response.success:
-            raise MemoryAccessError(
-                f"Failed to write {len(data)} bytes at ${address:04X} with PC=${self._pc:04X}"
-            )
+            raise MemoryAccessError(f"Failed to write {len(data)} bytes at ${address:04X} with PC=${self._pc:04X}")
 
     def cast(self, fmt: str) -> TypedMemoryAccessor:
         """Return a typed view of memory using a struct format string.
@@ -518,6 +502,7 @@ class AddressSpace:
 # Region Accessors (named memory regions with absolute addresses)
 # =============================================================================
 
+
 class RegionAccessorBase:
     """Common base for region-based memory accessors."""
 
@@ -547,11 +532,7 @@ class RegionPeekAccessor(MemoryReader):
 
     def _read_bytes(self, address: int, length: int) -> bytes:
         """Read bytes using PeekRegion RPC (no side effects)."""
-        request = debugger_pb2.RegionAccessRequest(
-            region_name=self._region_name,
-            address=address,
-            length=length
-        )
+        request = debugger_pb2.RegionAccessRequest(region_name=self._region_name, address=address, length=length)
         response = self._stub.PeekRegion(request)
         return response.data
 
@@ -569,26 +550,17 @@ class RegionBusAccessor(MemoryReader, MemoryWriter):
 
     def _read_bytes(self, address: int, length: int) -> bytes:
         """Read bytes using ReadRegion RPC (may have side effects)."""
-        request = debugger_pb2.RegionAccessRequest(
-            region_name=self._region_name,
-            address=address,
-            length=length
-        )
+        request = debugger_pb2.RegionAccessRequest(region_name=self._region_name, address=address, length=length)
         response = self._stub.ReadRegion(request)
         return response.data
 
     def _write_bytes(self, address: int, data: bytes) -> None:
         """Write bytes using WriteRegion RPC."""
-        request = debugger_pb2.WriteRegionRequest(
-            region_name=self._region_name,
-            address=address,
-            data=data
-        )
+        request = debugger_pb2.WriteRegionRequest(region_name=self._region_name, address=address, data=data)
         response = self._stub.WriteRegion(request)
         if not response.success:
             raise MemoryAccessError(
-                f"Failed to write {len(data)} bytes to region '{self._region_name}' "
-                f"at ${address:04X}: {response.error}"
+                f"Failed to write {len(data)} bytes to region '{self._region_name}' at ${address:04X}: {response.error}"
             )
 
     def cast(self, fmt: str) -> TypedMemoryAccessor:
@@ -619,7 +591,7 @@ class Region:
         stub: debugger_pb2_grpc.DebuggerControlStub,
         region_name: str,
         base_address: int | None = None,
-        size: int | None = None
+        size: int | None = None,
     ):
         self._stub = stub
         self._region_name = region_name
@@ -661,6 +633,7 @@ class Region:
 # =============================================================================
 # Memory - Top-level memory access interface
 # =============================================================================
+
 
 class Memory:
     """Memory access namespace.

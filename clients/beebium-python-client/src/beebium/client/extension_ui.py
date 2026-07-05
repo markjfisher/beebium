@@ -282,9 +282,7 @@ class ExtensionUi:
             grpc.RpcError: with code NOT_FOUND if the extension does
                 not exist or has no UI.
         """
-        request = extension_ui_pb2.SubscribeViewRequest(
-            extension_id=extension_id
-        )
+        request = extension_ui_pb2.SubscribeViewRequest(extension_id=extension_id)
         for proto_view in self._stub.SubscribeView(request):
             yield _convert_view(proto_view)
 
@@ -352,16 +350,10 @@ class ExtensionUi:
             request.string_value = payload
         elif isinstance(payload, int):
             if payload < 0:
-                raise ValueError(
-                    "Choice index payload must be non-negative; "
-                    f"got {payload}"
-                )
+                raise ValueError(f"Choice index payload must be non-negative; got {payload}")
             request.index_value = payload
         else:
-            raise TypeError(
-                f"dispatch payload must be bool, str, int, or None; "
-                f"got {type(payload).__name__}"
-            )
+            raise TypeError(f"dispatch payload must be bool, str, int, or None; got {type(payload).__name__}")
 
         response = self._stub.Dispatch(request)
         return DispatchResult(accepted=response.accepted, error=response.error)

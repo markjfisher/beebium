@@ -98,9 +98,7 @@ class AcornScsi(PeripheralExtensionAdapter):
             irq_pending=response.irq_pending,
         )
 
-    def watch_bus_events(
-        self, *, include_register_access: bool = False
-    ) -> Iterator[scsi_pb2.ScsiBusEvent]:
+    def watch_bus_events(self, *, include_register_access: bool = False) -> Iterator[scsi_pb2.ScsiBusEvent]:
         """Stream SCSI bus events.
 
         Yields the raw ``ScsiBusEvent`` protobuf messages -- the event is a
@@ -109,12 +107,8 @@ class AcornScsi(PeripheralExtensionAdapter):
         wrapper. Set ``include_register_access`` for verbose register-level
         events.
         """
-        request = scsi_pb2.WatchScsiBusEventsRequest(
-            include_register_access=include_register_access
-        )
-        for reply in self._server_stream_bytes(
-            _SERVICE, "WatchBusEvents", request.SerializeToString()
-        ):
+        request = scsi_pb2.WatchScsiBusEventsRequest(include_register_access=include_register_access)
+        for reply in self._server_stream_bytes(_SERVICE, "WatchBusEvents", request.SerializeToString()):
             event = scsi_pb2.ScsiBusEvent()
             event.ParseFromString(reply)
             yield event

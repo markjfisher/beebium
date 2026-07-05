@@ -79,6 +79,4 @@ class RpcSerial(PeripheralExtensionAdapter):
         reply = self._invoke_bytes(_SERVICE, "GetStatus", request.SerializeToString())
         response = rpc_serial_pb2.RpcSerialStatus()
         response.ParseFromString(reply)
-        return RpcSerialStatus(
-            tx_pending=response.tx_pending, rx_pending=response.rx_pending
-        )
+        return RpcSerialStatus(tx_pending=response.tx_pending, rx_pending=response.rx_pending)

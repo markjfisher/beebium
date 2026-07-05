@@ -105,17 +105,11 @@ class ExtensionAdapter(ABC):
 
     def _invoke_bytes(self, service: str, method: str, payload: bytes) -> bytes:
         """Unary call routed to this adapter's instance. Returns reply bytes."""
-        return self._channel.invoke(
-            service, method, payload, extension_id=self._extension_id
-        )
+        return self._channel.invoke(service, method, payload, extension_id=self._extension_id)
 
-    def _server_stream_bytes(
-        self, service: str, method: str, payload: bytes
-    ) -> Iterator[bytes]:
+    def _server_stream_bytes(self, service: str, method: str, payload: bytes) -> Iterator[bytes]:
         """Server-streaming call routed to this instance. Yields reply bytes."""
-        yield from self._channel.server_stream(
-            service, method, payload, extension_id=self._extension_id
-        )
+        yield from self._channel.server_stream(service, method, payload, extension_id=self._extension_id)
 
     @classmethod
     def describe(cls, *, single_line: bool = False) -> str:
@@ -177,8 +171,7 @@ class EconetTransportAdapter(ExtensionAdapter):
 def _on_load_failure(manager, entrypoint, exception) -> None:
     """Turn a stevedore load failure into a beebium ExtensionError."""
     raise ExtensionError(
-        f"Could not load the {entrypoint.name!r} adapter from the "
-        f"{manager.namespace!r} entry-point group: {exception}"
+        f"Could not load the {entrypoint.name!r} adapter from the {manager.namespace!r} entry-point group: {exception}"
     ) from exception
 
 
@@ -221,9 +214,7 @@ def describe_adapter(name: str, group: str, *, single_line: bool = False) -> str
     return adapter_type(name, group).describe(single_line=single_line)
 
 
-def create_adapter(
-    name: str, group: str, channel: ExtensionChannel, extension_id: str = ""
-) -> ExtensionAdapter:
+def create_adapter(name: str, group: str, channel: ExtensionChannel, extension_id: str = "") -> ExtensionAdapter:
     """Instantiate the adapter registered for ``name`` in ``group``."""
     cls = adapter_type(name, group)
     return cls(name, channel, extension_id=extension_id)
@@ -252,20 +243,16 @@ def resolve_loaded(entries, key: str, *, requested: str, kind: str):
     with no further change.
     """
     if not key:
-        raise ExtensionNotLoadedError(
-            f"{requested} does not declare an EXTENSION_NAME."
-        )
+        raise ExtensionNotLoadedError(f"{requested} does not declare an EXTENSION_NAME.")
     matches = [e for e in entries if e.name == key or e.id == key]
     if not matches:
         available = ", ".join(sorted(e.name for e in entries)) or "(none)"
         raise ExtensionNotLoadedError(
-            f"{kind} {key!r} (requested via {requested}) is not loaded on the "
-            f"server. Loaded: {available}."
+            f"{kind} {key!r} (requested via {requested}) is not loaded on the server. Loaded: {available}."
         )
     if len(matches) > 1:
         ids = ", ".join(m.id for m in matches)
         raise ExtensionAmbiguousError(
-            f"{len(matches)} instances of {kind} {key!r} are loaded; address one "
-            f'by its id (["<id>"]): {ids}.'
+            f'{len(matches)} instances of {kind} {key!r} are loaded; address one by its id (["<id>"]): {ids}.'
         )
     return matches[0]

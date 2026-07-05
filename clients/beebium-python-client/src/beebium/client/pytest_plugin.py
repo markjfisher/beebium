@@ -94,10 +94,7 @@ def beebium_roms_dirpath(request: pytest.FixtureRequest) -> Path:
         if candidate.exists():
             return candidate
 
-    pytest.skip(
-        "ROMs not found. Set BEEBIUM_ROM_DIR environment variable "
-        "or use --beebium-rom-dir option."
-    )
+    pytest.skip("ROMs not found. Set BEEBIUM_ROM_DIR environment variable or use --beebium-rom-dir option.")
 
 
 @pytest.fixture(scope="session")
@@ -112,10 +109,7 @@ def mos_filepath(beebium_roms_dirpath: Path) -> Path:
         if path.exists():
             return path
 
-    pytest.skip(
-        f"MOS ROM not found in {beebium_roms_dirpath}. "
-        f"Expected one of: {', '.join(candidates)}"
-    )
+    pytest.skip(f"MOS ROM not found in {beebium_roms_dirpath}. Expected one of: {', '.join(candidates)}")
 
 
 @pytest.fixture(scope="session")

@@ -37,14 +37,7 @@ class TubeControlFlags:
     @property
     def raw(self) -> int:
         """Raw 6-bit value."""
-        return (
-            (self.q << 0)
-            | (self.i << 1)
-            | (self.j << 2)
-            | (self.m << 3)
-            | (self.v << 4)
-            | (self.p << 5)
-        )
+        return (self.q << 0) | (self.i << 1) | (self.j << 2) | (self.m << 3) | (self.v << 4) | (self.p << 5)
 
     def __str__(self) -> str:
         flags = []
@@ -117,10 +110,7 @@ class TubeHostStatus:
     r4_status: int = 0
 
     def __str__(self) -> str:
-        return (
-            f"R1=${self.r1_status:02X} R2=${self.r2_status:02X} "
-            f"R3=${self.r3_status:02X} R4=${self.r4_status:02X}"
-        )
+        return f"R1=${self.r1_status:02X} R2=${self.r2_status:02X} R3=${self.r3_status:02X} R4=${self.r4_status:02X}"
 
 
 @dataclass
@@ -133,10 +123,7 @@ class TubeParasiteStatus:
     r4_status: int = 0
 
     def __str__(self) -> str:
-        return (
-            f"R1=${self.r1_status:02X} R2=${self.r2_status:02X} "
-            f"R3=${self.r3_status:02X} R4=${self.r4_status:02X}"
-        )
+        return f"R1=${self.r1_status:02X} R2=${self.r2_status:02X} R3=${self.r3_status:02X} R4=${self.r4_status:02X}"
 
 
 @dataclass
@@ -193,8 +180,7 @@ class TubeTransferCounters:
             h2p_delta = h2p_w - h2p_r
             p2h_delta = p2h_w - p2h_r
             lines.append(
-                f"  R{reg}: H->P w={h2p_w} r={h2p_r} (delta={h2p_delta})"
-                f"  P->H w={p2h_w} r={p2h_r} (delta={p2h_delta})"
+                f"  R{reg}: H->P w={h2p_w} r={h2p_r} (delta={h2p_delta})  P->H w={p2h_w} r={p2h_r} (delta={p2h_delta})"
             )
         return "\n".join(lines)
 
@@ -275,7 +261,12 @@ def _from_proto(pb: debugger_pb2.TubeState) -> TubeUlaState:
     return TubeUlaState(
         enabled=pb.enabled,
         control_flags=TubeControlFlags(
-            q=cf.q, i=cf.i, j=cf.j, m=cf.m, v=cf.v, p=cf.p,
+            q=cf.q,
+            i=cf.i,
+            j=cf.j,
+            m=cf.m,
+            v=cf.v,
+            p=cf.p,
         ),
         r1_h2p=TubeLatchState(
             value=pb.r1_h2p.value,

@@ -42,9 +42,7 @@ class ExtensionChannel:
     def __init__(self, stub: extension_rpc_pb2_grpc.ExtensionRpcStub):
         self._stub = stub
 
-    def invoke(
-        self, service: str, method: str, payload: bytes, *, extension_id: str = ""
-    ) -> bytes:
+    def invoke(self, service: str, method: str, payload: bytes, *, extension_id: str = "") -> bytes:
         """Unary call. Returns the response payload bytes.
 
         A non-OK extension status surfaces as the gRPC error it maps to (the
@@ -60,9 +58,7 @@ class ExtensionChannel:
         )
         return response.payload
 
-    def server_stream(
-        self, service: str, method: str, payload: bytes, *, extension_id: str = ""
-    ) -> Iterator[bytes]:
+    def server_stream(self, service: str, method: str, payload: bytes, *, extension_id: str = "") -> Iterator[bytes]:
         """Server-streaming call. Yields each response payload's bytes."""
         request = extension_rpc_pb2.InvokeRequest(
             extension_id=extension_id,

@@ -528,9 +528,7 @@ class Disc:
                 disc=disc_metadata,
             )
 
-    def start_background_events(
-        self, callback: Callable[[DiscEvent], None]
-    ) -> EventStreamHandle:
+    def start_background_events(self, callback: Callable[[DiscEvent], None]) -> EventStreamHandle:
         """Start streaming events in background thread.
 
         Args:

@@ -73,9 +73,7 @@ class AcornRtc(PeripheralExtensionAdapter):
 
     def get_time(self) -> RtcTime:
         """Read the current emulated date and time."""
-        reply = self._invoke_bytes(
-            _SERVICE, "GetTime", acorn_rtc_pb2.GetRtcTimeRequest().SerializeToString()
-        )
+        reply = self._invoke_bytes(_SERVICE, "GetTime", acorn_rtc_pb2.GetRtcTimeRequest().SerializeToString())
         response = acorn_rtc_pb2.GetRtcTimeResponse()
         response.ParseFromString(reply)
         return RtcTime(
@@ -110,17 +108,13 @@ class AcornRtc(PeripheralExtensionAdapter):
 
     def set_register(self, index: int, bcd_value: int) -> None:
         """Write a single register (0-7) with a raw BCD byte."""
-        request = acorn_rtc_pb2.SetRtcRegisterRequest(
-            register_index=index, bcd_value=bcd_value
-        )
+        request = acorn_rtc_pb2.SetRtcRegisterRequest(register_index=index, bcd_value=bcd_value)
         self._invoke_bytes(_SERVICE, "SetRegister", request.SerializeToString())
 
     def watch_activity(self) -> Iterator[RtcActivityEvent]:
         """Stream CBUS register reads and writes as the BBC accesses the chip."""
         request = acorn_rtc_pb2.WatchActivityRequest()
-        for reply in self._server_stream_bytes(
-            _SERVICE, "WatchActivity", request.SerializeToString()
-        ):
+        for reply in self._server_stream_bytes(_SERVICE, "WatchActivity", request.SerializeToString()):
             event = acorn_rtc_pb2.RtcActivityEvent()
             event.ParseFromString(reply)
             yield RtcActivityEvent(
