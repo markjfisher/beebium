@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from beebium.client._proto import system_pb2, system_pb2_grpc
 
 if TYPE_CHECKING:
-    from typing import Optional
+    pass
 
 
 class ServerStatus(Enum):
@@ -75,7 +75,7 @@ class MachineIdentity:
         name: str,
         model_type: str,
         model_name: str,
-        system: "System",
+        system: System,
     ):
         self._uuid = uuid
         self._name = name
@@ -111,7 +111,7 @@ class MachineIdentity:
         return self._model_name
 
     @property
-    def system(self) -> "System":
+    def system(self) -> System:
         """Reference to the parent System object."""
         return self._system
 
@@ -166,8 +166,8 @@ class ServerStatusEvent:
     status: ServerStatus
     message: str
     shutdown_grace_ms: int  # Grace period for SHUTTING_DOWN
-    identity: "Optional[MachineIdentity]" = None  # For IDENTITY_CHANGED events
-    shutdown_conditions: "tuple[ShutdownConditionStatus, ...]" = ()  # For SHUTDOWN_PROGRESS
+    identity: MachineIdentity | None = None  # For IDENTITY_CHANGED events
+    shutdown_conditions: tuple[ShutdownConditionStatus, ...] = ()  # For SHUTDOWN_PROGRESS
 
 
 @dataclass(frozen=True)

@@ -27,6 +27,8 @@ Usage:
         bbc.keyboard.press_return()
 """
 
+from beebium.client._proto.protocol_fingerprint import PROTOCOL_FINGERPRINT
+from beebium.client._version import __version__
 from beebium.client.audio import (
     AudioChunk,
     AudioFormat,
@@ -35,34 +37,12 @@ from beebium.client.audio import (
     SourceEncoding,
 )
 from beebium.client.client import Beebium
-from beebium.client.extensions import (
-    ExtensionInfo,
-    Extensions,
-    ParameterSchemaInfo,
-    StorageDevice,
-    StorageKind,
-)
 from beebium.client.econet import (
     AdlcStatus,
     EconetStatus,
     HandshakeStatus,
 )
 from beebium.client.econet_transport import TransportInfo
-from beebium.client.extension_ui import (
-    Button,
-    Choice,
-    Control,
-    ControlKind,
-    DispatchResult,
-    Group,
-    Indicator,
-    IndicatorState,
-    Label,
-    SubscriptionHandle,
-    TextInput,
-    Toggle,
-    View,
-)
 from beebium.client.exceptions import (
     BeebiumError,
     ConnectionError,
@@ -85,7 +65,28 @@ from beebium.client.extension import (
     ExtensionAdapter,
     PeripheralExtensionAdapter,
 )
-from beebium.client._proto.protocol_fingerprint import PROTOCOL_FINGERPRINT
+from beebium.client.extension_ui import (
+    Button,
+    Choice,
+    Control,
+    ControlKind,
+    DispatchResult,
+    Group,
+    Indicator,
+    IndicatorState,
+    Label,
+    SubscriptionHandle,
+    TextInput,
+    Toggle,
+    View,
+)
+from beebium.client.extensions import (
+    ExtensionInfo,
+    Extensions,
+    ParameterSchemaInfo,
+    StorageDevice,
+    StorageKind,
+)
 from beebium.client.system import (
     AdvertisementState,
     MachineIdentity,
@@ -96,8 +97,6 @@ from beebium.client.system import (
     ShutdownMode,
     ShutdownResponse,
 )
-
-from beebium.client._version import __version__
 
 # Default gRPC port for beebium servers (0xBEEB = 48875)
 DEFAULT_GRPC_PORT = 0xBEEB

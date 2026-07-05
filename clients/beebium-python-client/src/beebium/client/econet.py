@@ -24,8 +24,8 @@ is active.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator
 
 from beebium.client._proto import econet_pb2, econet_pb2_grpc
 from beebium.client.exceptions import EconetError

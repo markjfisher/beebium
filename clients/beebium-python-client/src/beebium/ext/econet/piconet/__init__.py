@@ -25,8 +25,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from beebium.ext.econet.piconet._proto import piconet_service_pb2
 from beebium.client.extension import EconetTransportAdapter
+from beebium.ext.econet.piconet._proto import piconet_service_pb2
 
 # The logical service name the piconet extension's dispatcher registers
 # (matches PiconetDispatcher::service_name() in the extension).

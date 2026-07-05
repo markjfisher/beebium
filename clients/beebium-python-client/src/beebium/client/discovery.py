@@ -106,8 +106,8 @@ class MachineDiscovery:
 
     def __init__(
         self,
-        on_found: "Callable[[DiscoveredMachine], None] | None" = None,
-        on_removed: "Callable[[str], None] | None" = None,
+        on_found: Callable[[DiscoveredMachine], None] | None = None,
+        on_removed: Callable[[str], None] | None = None,
     ):
         """Initialize machine discovery.
 
@@ -156,15 +156,15 @@ class MachineDiscovery:
 
     # ServiceListener interface methods (called by zeroconf)
 
-    def add_service(self, zc: "Zeroconf", type_: str, name: str) -> None:
+    def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         """Called when a service is discovered."""
         self._handle_service_update(zc, type_, name)
 
-    def update_service(self, zc: "Zeroconf", type_: str, name: str) -> None:
+    def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         """Called when a service is updated."""
         self._handle_service_update(zc, type_, name)
 
-    def remove_service(self, zc: "Zeroconf", type_: str, name: str) -> None:
+    def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         """Called when a service is removed."""
         # Extract instance name (remove service type suffix)
         instance_name = name.removesuffix("." + type_)
@@ -174,7 +174,7 @@ class MachineDiscovery:
             if self._on_removed:
                 self._on_removed(instance_name)
 
-    def _handle_service_update(self, zc: "Zeroconf", type_: str, name: str) -> None:
+    def _handle_service_update(self, zc: Zeroconf, type_: str, name: str) -> None:
         """Process a service add or update event."""
         info = zc.get_service_info(type_, name)
         if not info:
@@ -217,7 +217,7 @@ class MachineDiscovery:
             self._on_found(machine)
 
 
-def browse(timeout: float = 5.0) -> "Iterator[DiscoveredMachine]":
+def browse(timeout: float = 5.0) -> Iterator[DiscoveredMachine]:
     """Discover Beebium servers on the local network.
 
     This is a simple one-shot discovery function that browses for

@@ -52,7 +52,6 @@ from typing import overload
 from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
 from beebium.client.exceptions import MemoryAccessError
 
-
 # =============================================================================
 # Memory Region Info
 # =============================================================================
@@ -347,7 +346,7 @@ class PeekMemoryAccessor(MemoryReader):
         response = self._stub.PeekMemory(request)
         return response.data
 
-    def with_pc(self, pc: int) -> "PCContextReader":
+    def with_pc(self, pc: int) -> PCContextReader:
         """Return a PC-context accessor for B+ shadow RAM routing.
 
         On BBC Model B+, memory access to 0x3000-0x7FFF is routed differently
@@ -399,7 +398,7 @@ class BusMemoryAccessor(MemoryReader, MemoryWriter):
         """
         return TypedMemoryAccessor(self, fmt)
 
-    def with_pc(self, pc: int) -> "PCContextAccessor":
+    def with_pc(self, pc: int) -> PCContextAccessor:
         """Return a PC-context accessor for B+ shadow RAM routing.
 
         On BBC Model B+, memory access to 0x3000-0x7FFF is routed differently

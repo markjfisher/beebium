@@ -18,7 +18,6 @@ from dataclasses import dataclass
 
 from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
 
-
 # MOS SOUND command channel mapping to SN76489 internal channels
 # MOS channel 0 = Noise (SN76489 index 3)
 # MOS channel 1 = Tone0 (SN76489 index 0)

@@ -33,6 +33,8 @@ from typing import TypeVar, overload
 
 from beebium.client._proto import (
     peripheral_extension_pb2 as pe_pb2,
+)
+from beebium.client._proto import (
     peripheral_extension_pb2_grpc as pe_grpc,
 )
 from beebium.client.exceptions import ExtensionError

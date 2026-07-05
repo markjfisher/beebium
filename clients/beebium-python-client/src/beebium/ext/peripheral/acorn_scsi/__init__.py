@@ -22,8 +22,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from beebium.ext.peripheral.acorn_scsi._proto import scsi_host_adapter_pb2 as scsi_pb2
 from beebium.client.extension import PeripheralExtensionAdapter
+from beebium.ext.peripheral.acorn_scsi._proto import scsi_host_adapter_pb2 as scsi_pb2
 
 # The logical service name the acorn-scsi dispatcher registers
 # (matches ScsiHostAdapterDispatcher::service_name()).

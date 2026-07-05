@@ -23,13 +23,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
 
-from beebium.ext.econet.aun._proto import aun_pb2
+from beebium.client.exceptions import EconetError
 from beebium.client.extension import EconetTransportAdapter
+from beebium.ext.econet.aun._proto import aun_pb2
 
 # The logical service name the AUN extension's dispatcher registers
 # (matches AunDispatcher::service_name() in the extension).
 _SERVICE = "AunService"
-from beebium.client.exceptions import EconetError
 
 
 class PeerSource(IntEnum):

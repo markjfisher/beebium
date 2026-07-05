@@ -18,11 +18,11 @@ execution control, breakpointing, and predicate-based stopping.
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
     from beebium.client import Beebium
 
 

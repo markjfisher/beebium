@@ -33,7 +33,8 @@ The MODE 7 address mapping mirrors the emulator's own renderer
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Protocol, TypeVar, Union, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 if TYPE_CHECKING:
     from beebium.client.crtc import Crtc
@@ -45,7 +46,7 @@ MODE7_COLS = 40
 MODE7_ROWS = 25
 
 # A row is 40 raw screen bytes; rows compose into the 25-row display grid.
-Row = Union[bytes, str]
+Row = bytes | str
 
 # Row-polymorphic helpers preserve the row type: given byte rows they return
 # bytes, given text rows they return str.

@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
 
 from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
 

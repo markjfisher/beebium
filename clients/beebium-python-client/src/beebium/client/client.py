@@ -22,29 +22,31 @@ from pathlib import Path
 import grpc
 
 import beebium.client as beebium
+from beebium.client._proto.protocol_fingerprint import PROTOCOL_FINGERPRINT
+from beebium.client.audio import Audio
 from beebium.client.basic import Basic
 from beebium.client.connection import Connection
-from beebium.client.exceptions import (
-    BeebiumError,
-    ConnectionError as BeebiumConnectionError,
-    ProtocolMismatchError,
-)
-from beebium.client._proto.protocol_fingerprint import PROTOCOL_FINGERPRINT
 from beebium.client.cpu import CPU
 from beebium.client.crtc import Crtc
 from beebium.client.debugger import Debugger
 from beebium.client.disc import Disc
-from beebium.client.audio import Audio
 from beebium.client.econet import Econet
-from beebium.client.extensions import Extensions
 from beebium.client.econet_transport import EconetTransport
+from beebium.client.exceptions import (
+    BeebiumError,
+    ProtocolMismatchError,
+)
+from beebium.client.exceptions import (
+    ConnectionError as BeebiumConnectionError,
+)
 from beebium.client.extension_rpc import ExtensionChannel
-from beebium.client.serial import Serial
 from beebium.client.extension_ui import ExtensionUi
+from beebium.client.extensions import Extensions
 from beebium.client.indicators import Indicators
 from beebium.client.keyboard import Keyboard
 from beebium.client.latch import AddressableLatch
 from beebium.client.memory import Memory
+from beebium.client.serial import Serial
 from beebium.client.server import ServerProcess
 from beebium.client.sideways import Sideways
 from beebium.client.sound import Sound

@@ -23,8 +23,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntEnum
 
-from beebium.ext.peripheral.acorn_rtc._proto import acorn_rtc_pb2
 from beebium.client.extension import PeripheralExtensionAdapter
+from beebium.ext.peripheral.acorn_rtc._proto import acorn_rtc_pb2
 
 # The logical service name the acorn-rtc dispatcher registers
 # (matches AcornRtcDispatcher::service_name()).

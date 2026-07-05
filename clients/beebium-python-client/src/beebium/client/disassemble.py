@@ -25,7 +25,6 @@ Usage::
 """
 from __future__ import annotations
 
-
 # Opcode table: opcode -> (mnemonic_template, byte_count).
 #
 # Mnemonic templates use placeholders for operand formatting:

@@ -23,11 +23,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from beebium.client._proto import keyboard_pb2, keyboard_pb2_grpc
 from beebium.client.keyboard_map import (
     CTRL_KEY,
-    DELETE_KEY,
-    ESCAPE_KEY,
-    RETURN_KEY,
     SHIFT_KEY,
-    SPACE_KEY,
     char_to_matrix,
 )
 

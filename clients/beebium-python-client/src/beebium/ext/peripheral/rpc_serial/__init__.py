@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from beebium.ext.peripheral.rpc_serial._proto import rpc_serial_pb2
 from beebium.client.extension import PeripheralExtensionAdapter
+from beebium.ext.peripheral.rpc_serial._proto import rpc_serial_pb2
 
 # The logical service name the rpc-serial extension's dispatcher registers
 # (matches RpcSerialDispatcher::service_name() in the extension).

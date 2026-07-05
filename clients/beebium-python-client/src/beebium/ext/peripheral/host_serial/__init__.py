@@ -23,8 +23,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from beebium.ext.peripheral.host_serial._proto import host_serial_pb2
 from beebium.client.extension import PeripheralExtensionAdapter
+from beebium.ext.peripheral.host_serial._proto import host_serial_pb2
 
 # The logical service name the host-serial extension's dispatcher registers
 # (matches HostSerialDispatcher::service_name() in the extension).

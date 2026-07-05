@@ -53,6 +53,7 @@ dev = [
     { include-group = "test" },
     "grpcio-tools>=1.60.0",
     "mypy-protobuf>=3.6.0",
+    "ruff>=0.6.0",
     # The optional-feature dependencies, so the dev environment type-checks the
     # code that uses them (video PIL export, zeroconf discovery).
     "Pillow>=10.0.0",
@@ -96,6 +97,22 @@ packages = ["src/beebium"]
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
 default = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+# The _proto tree is generated (grpc.experimental, dynamic attrs); don't lint it.
+extend-exclude = ["**/_proto"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# Keep classic typing.TypeVar rather than PEP 695 type parameters for now; a
+# migration to `def f[T]()` syntax is a deliberate, separate choice.
+ignore = ["UP046", "UP047"]
+
+[tool.ruff.lint.per-file-ignores]
+# Package __init__ modules re-export their public API.
+"**/__init__.py" = ["F401"]
 
 [tool.pyright]
 include = ["src", "examples"]

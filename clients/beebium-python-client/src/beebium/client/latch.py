@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
 from typing import TYPE_CHECKING
 
 from beebium.client._proto import debugger_pb2

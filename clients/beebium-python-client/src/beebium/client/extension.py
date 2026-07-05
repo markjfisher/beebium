@@ -29,7 +29,7 @@ demonstrable-visning.
 from __future__ import annotations
 
 import inspect
-from abc import ABC
+from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, ClassVar, Self, cast
 
@@ -134,6 +134,7 @@ class ExtensionAdapter(ABC):
         return "1.0.0"
 
     @classmethod
+    @abstractmethod
     def attach(cls, bbc: Beebium) -> Self:
         """Return this adapter bound to ``bbc``, typed as the concrete class.
 
@@ -142,7 +143,7 @@ class ExtensionAdapter(ABC):
         routes to the right discovery facade. Raises
         :class:`ExtensionNotLoadedError` if the server has not loaded it.
         """
-        raise NotImplementedError  # implemented per category below
+        ...  # implemented per category below
 
 
 class PeripheralExtensionAdapter(ExtensionAdapter):

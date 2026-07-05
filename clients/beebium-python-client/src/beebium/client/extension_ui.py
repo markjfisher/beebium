@@ -43,8 +43,7 @@ from __future__ import annotations
 import enum
 import threading
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 from beebium.client._proto import extension_ui_pb2, extension_ui_pb2_grpc
 
@@ -120,8 +119,8 @@ class TextInput:
 class Group:
     """A nested group of controls. ``label`` is None for unlabelled groups."""
 
-    label: Optional[str] = None
-    children: tuple["Control", ...] = ()
+    label: str | None = None
+    children: tuple[Control, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -135,13 +134,13 @@ class Control:
 
     id: str
     kind: ControlKind
-    label: Optional[Label] = None
-    indicator: Optional[Indicator] = None
-    toggle: Optional[Toggle] = None
-    button: Optional[Button] = None
-    choice: Optional[Choice] = None
-    text_input: Optional[TextInput] = None
-    group: Optional[Group] = None
+    label: Label | None = None
+    indicator: Indicator | None = None
+    toggle: Toggle | None = None
+    button: Button | None = None
+    choice: Choice | None = None
+    text_input: TextInput | None = None
+    group: Group | None = None
 
 
 @dataclass(frozen=True)
