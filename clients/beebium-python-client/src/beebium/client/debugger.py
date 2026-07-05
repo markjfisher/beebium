@@ -758,6 +758,10 @@ class Debugger:
         This handles the case where the server coalesces running+stopped
         events when a breakpoint fires immediately.
 
+        To *resume and then* wait for the next stop, use
+        :meth:`run_and_wait_for_stop`: pairing ``ensure_running()`` with this
+        method races a breakpoint that fires before this call subscribes.
+
         Args:
             timeout: Wall-clock deadline in seconds for the entire wait.
 
@@ -779,55 +783,72 @@ class Debugger:
                 return event
         raise DebuggerError("Execution state stream ended without a stop event")
 
+    def run_and_wait_for_stop(
+        self, *, timeout: float = DEFAULT_TIMEOUT
+    ) -> ExecutionStateEvent:
+        """Resume execution and wait for the next stop; return the stop event.
+
+        Race-free: it subscribes to the execution-state stream *before* resuming,
+        so a breakpoint or watchpoint that fires immediately is never missed.
+        Prefer this over ``ensure_running()`` followed by :meth:`wait_for_stop`,
+        which can miss a stop that happens before ``wait_for_stop`` subscribes.
+
+        Args:
+            timeout: Wall-clock deadline in seconds for the wait.
+
+        Returns:
+            The event that stopped the machine.
+
+        Raises:
+            DebuggerError: If the timeout expires or the stream ends without a
+                stop event.
+        """
+        stream = self.watch_execution_state(timeout=timeout)
+        initial_sequence = next(stream).state.sequence
+        self.ensure_running()
+        for event in stream:
+            if not event.state.is_running and event.state.sequence > initial_sequence:
+                return event
+        raise DebuggerError("Execution state stream ended without a stop event")
+
     # Run-until helpers
 
     def run_until(
         self,
         address: int,
-        timeout_cycles: int | None = None,
         *,
+        end_address: int = 0,
+        condition: str = "",
+        stop_counterpart: bool = False,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> ExecutionState:
-        """Run until the PC reaches the given address.
+        """Run until a temporary breakpoint fires, then return the stopped state.
 
-        Sets a temporary breakpoint, subscribes to execution state events,
-        starts execution, and waits for the machine to stop.
+        Sets a breakpoint (removed again on return, even on error), subscribes to
+        the execution-state stream *before* starting -- so it never misses a
+        breakpoint that fires immediately -- runs, and waits for the stop. The
+        machine is left stopped at the breakpoint.
 
         Args:
-            address: The address to run until.
-            timeout_cycles: Maximum cycles to run (not currently implemented).
-            timeout: Wall-clock deadline in seconds. If the breakpoint is not
-                hit within this time, a :class:`DebuggerError` is raised.
+            address: Start address to break at.
+            end_address: End of the range (exclusive); 0 means a single address.
+            condition: An expression that must be true to stop; see
+                :meth:`add_breakpoint` for the grammar. Empty is unconditional.
+            stop_counterpart: Also signal the counterpart processor to stop.
+            timeout: Wall-clock deadline in seconds. If the breakpoint is not hit
+                within this time, a :class:`DebuggerError` is raised.
 
         Returns:
-            The execution state after hitting the address.
+            The execution state after hitting the breakpoint.
 
         Raises:
             DebuggerError: If the breakpoint cannot be set, or if the timeout
                 expires before the breakpoint is hit.
         """
-        with self.breakpoint(address):
-            try:
-                stream = self._stub.WatchExecutionState(
-                    debugger_pb2.WatchExecutionStateRequest(),
-                    timeout=timeout,
-                )
-                # Consume initial state and record its sequence number
-                initial = next(stream)
-                initial_sequence = initial.state.sequence
-                # Start execution
-                self.run()
-                # Wait for a stopped event with a higher sequence number
-                for event in stream:
-                    if event.state.is_running:
-                        continue
-                    if event.state.sequence > initial_sequence:
-                        stream.cancel()
-                        return _to_execution_state(event.state)
-                raise DebuggerError("Stream ended without stop")
-            except grpc.RpcError as e:
-                if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                    raise DebuggerError(
-                        f"Timed out waiting for stop after {timeout}s"
-                    ) from None
-                raise
+        with self.breakpoint(
+            address,
+            end_address=end_address,
+            condition=condition,
+            stop_counterpart=stop_counterpart,
+        ):
+            return self.run_and_wait_for_stop(timeout=timeout).state

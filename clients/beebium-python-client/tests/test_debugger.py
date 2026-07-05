@@ -28,25 +28,8 @@ from beebium.client.exceptions import DebuggerError, InvalidConditionError
 
 
 def run_and_wait_for_stop(bbc: Beebium) -> ExecutionStateEvent:
-    """Subscribe to the event stream, run, then wait for a stop event.
-
-    Opens the stream first, calls run(), then waits for a running-to-stopped
-    transition. Skips any stale stopped events that precede the first running
-    event. No polling.
-    """
-    stream = bbc.debugger.watch_execution_state()
-    # Consume initial state
-    next(stream)
-    # Start execution
-    bbc.debugger.run()
-    # Wait for running -> stopped transition (skip stale stopped events)
-    saw_running = False
-    for event in stream:
-        if event.state.is_running:
-            saw_running = True
-        elif saw_running:
-            return event
-    raise DebuggerError("Stream ended without stop event")
+    """Resume and wait for the next stop, race-free (delegates to the client)."""
+    return bbc.debugger.run_and_wait_for_stop()
 
 
 def plant_and_run_from(bbc: Beebium, code: bytes, org: int = 0x0400) -> None:
@@ -182,6 +165,16 @@ class TestBreakpoints:
         regs = bbc.cpu.registers
         assert regs.a == 0x42
         bbc.debugger.remove_breakpoint(bp_id)
+
+    def test_run_until_with_condition(self, bbc):
+        """run_until accepts a breakpoint condition and removes it afterward."""
+        # LDX #0; .loop: INX; JMP loop
+        code = bytes([0xA2, 0x00, 0xE8, 0x4C, 0x02, 0x04])
+        plant_and_run_from(bbc, code)
+        state = bbc.debugger.run_until(0x0402, condition="X == 5")
+        assert not state.is_running
+        assert bbc.cpu.registers.x == 5
+        assert len(bbc.debugger.list_breakpoints()) == 0
 
 
 # ============================================================================
