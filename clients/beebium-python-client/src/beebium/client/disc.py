@@ -143,7 +143,7 @@ def _proto_state_to_drive_state(state: int) -> DriveState:
 
 def _proto_event_type_to_event_type(event_type: int) -> DiscEventType:
     """Convert proto DiscEventType enum to DiscEventType."""
-    mapping = {
+    mapping: dict[int, DiscEventType] = {
         disc_pb2.DISC_EVENT_INSERTED: DiscEventType.INSERTED,
         disc_pb2.DISC_EVENT_EJECTED: DiscEventType.EJECTED,
         disc_pb2.DISC_EVENT_FORCE_EJECTED: DiscEventType.FORCE_EJECTED,

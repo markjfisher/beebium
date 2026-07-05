@@ -22,7 +22,7 @@ service stub.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypeVar, overload
+from typing import TypeVar, cast, overload
 
 from beebium.client._proto import econet_transport_pb2, econet_transport_pb2_grpc
 from beebium.client.exceptions import ExtensionError
@@ -156,7 +156,10 @@ class EconetTransport:
             info = self._require_loaded(key.EXTENSION_NAME, requested=key.__name__)
             return key(info.name, self._channel)
         info = self._require_loaded(key, requested=repr(key))
-        return create_adapter(info.name, ECONET_ENTRY_POINT_GROUP, self._channel)
+        return cast(
+            EconetTransportAdapter,
+            create_adapter(info.name, ECONET_ENTRY_POINT_GROUP, self._channel),
+        )
 
     @overload
     def get(self, key: str, default: None = None) -> EconetTransportAdapter | None: ...

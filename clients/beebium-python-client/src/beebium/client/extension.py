@@ -31,7 +31,7 @@ from __future__ import annotations
 import inspect
 from abc import ABC
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, ClassVar, Self
+from typing import TYPE_CHECKING, ClassVar, Self, cast
 
 import stevedore
 import stevedore.driver
@@ -211,7 +211,8 @@ def adapter_type(name: str, group: str) -> type[ExtensionAdapter]:
             f"No client adapter is installed for extension {name!r} in "
             f"{group!r}. Installed: {', '.join(installed) or '(none)'}."
         ) from None
-    return manager.driver
+    # invoke_on_load=False, so driver is the adapter class, not an instance.
+    return cast("type[ExtensionAdapter]", manager.driver)
 
 
 def describe_adapter(name: str, group: str, *, single_line: bool = False) -> str:

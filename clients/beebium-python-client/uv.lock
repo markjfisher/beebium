@@ -23,8 +23,10 @@ imaging = [
 dev = [
     { name = "grpcio-tools" },
     { name = "mypy-protobuf" },
+    { name = "pillow" },
     { name = "pytest" },
     { name = "pytest-timeout" },
+    { name = "zeroconf" },
 ]
 test = [
     { name = "pytest" },
@@ -45,8 +47,10 @@ provides-extras = ["discovery", "imaging"]
 dev = [
     { name = "grpcio-tools", specifier = ">=1.60.0" },
     { name = "mypy-protobuf", specifier = ">=3.6.0" },
+    { name = "pillow", specifier = ">=10.0.0" },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-timeout", specifier = ">=2.0.0" },
+    { name = "zeroconf", specifier = ">=0.131.0" },
 ]
 test = [
     { name = "pytest", specifier = ">=7.0.0" },

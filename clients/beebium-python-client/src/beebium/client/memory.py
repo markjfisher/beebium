@@ -126,7 +126,11 @@ class TypedMemoryReader:
 class TypedMemoryAccessor(TypedMemoryReader):
     """Typed read+write memory access using struct format."""
 
-    def __init__(self, accessor: BusMemoryAccessor | RegionBusAccessor, fmt: str):
+    def __init__(
+        self,
+        accessor: BusMemoryAccessor | RegionBusAccessor | PCContextAccessor,
+        fmt: str,
+    ):
         super().__init__(accessor, fmt)
         self._bus_accessor = accessor
 
@@ -151,8 +155,9 @@ class TypedMemoryAccessor(TypedMemoryReader):
                     f"slice length {length} not a multiple of {self._size}"
                 )
             expected_count = length // self._size
-            if not hasattr(value, "__len__") or len(value) != expected_count:
-                raise ValueError(f"expected {expected_count} values, got {len(value) if hasattr(value, '__len__') else 1}")
+            if not isinstance(value, tuple) or len(value) != expected_count:
+                got = len(value) if isinstance(value, tuple) else 1
+                raise ValueError(f"expected {expected_count} values, got {got}")
             data = struct.pack(f"<{expected_count}{self._fmt[1:]}", *value)
             self._bus_accessor.write(start, data)
         else:
@@ -255,7 +260,7 @@ class MemoryWriter(MemoryAccessorBase):
             if address.step is not None and address.step != 1:
                 raise ValueError("memory slices with step != 1 are not supported")
             slice_length = stop - start
-            if not hasattr(value, "__len__"):
+            if not isinstance(value, (bytes, bytearray)):
                 raise TypeError("slice assignment requires bytes-like object")
             if len(value) != slice_length:
                 raise ValueError(

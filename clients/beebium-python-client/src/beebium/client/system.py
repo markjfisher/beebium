@@ -418,11 +418,11 @@ class System:
         )
 
         # Build metadata with instance UUID if available
-        metadata = []
+        metadata: list[tuple[str, str]] = []
         if self._instance_uuid:
             metadata.append(("x-beebium-instance-uuid", self._instance_uuid))
 
-        response = self._stub.RequestShutdown(request, metadata=metadata)
+        response = self._stub.RequestShutdown(request, metadata=tuple(metadata))
 
         return ShutdownResponse(
             accepted=response.accepted,

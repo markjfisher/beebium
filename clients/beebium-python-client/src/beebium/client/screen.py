@@ -33,7 +33,11 @@ The MODE 7 address mapping mirrors the emulator's own renderer
 
 from __future__ import annotations
 
-from typing import Callable, Protocol, Union
+from typing import TYPE_CHECKING, Callable, Protocol, TypeVar, Union, cast
+
+if TYPE_CHECKING:
+    from beebium.client.crtc import Crtc
+    from beebium.client.memory import Memory
 
 MODE7_BASE = 0x7C00
 MODE7_REGION_SIZE = 0x400  # 1 KB MODE 7 screen RAM, addressed as a circular buffer
@@ -42,6 +46,10 @@ MODE7_ROWS = 25
 
 # A row is 40 raw screen bytes; rows compose into the 25-row display grid.
 Row = Union[bytes, str]
+
+# Row-polymorphic helpers preserve the row type: given byte rows they return
+# bytes, given text rows they return str.
+RowT = TypeVar("RowT", bytes, str)
 
 # A separator strategy decides what (if anything) to insert between two adjacent
 # rows when flattening the grid. It receives the two full-width rows and returns
@@ -59,9 +67,9 @@ class _ScreenClient(Protocol):
     """
 
     @property
-    def memory(self) -> object: ...
+    def memory(self) -> Memory: ...
     @property
-    def crtc(self) -> object: ...
+    def crtc(self) -> Crtc: ...
 
 
 # ---------------------------------------------------------------------------
@@ -125,30 +133,41 @@ def _is_letter(cell: int | str) -> bool:
     return 0x41 <= code <= 0x5A or 0x61 <= code <= 0x7A
 
 
-def _blank(like: Row) -> Row:
-    return b"" if isinstance(like, (bytes, bytearray)) else ""
+def _like(template: RowT, byte_value: bytes, str_value: str) -> RowT:
+    """Return byte_value or str_value, matching the row type of template.
+
+    The isinstance check guarantees the correct branch; the cast tells the type
+    checker what it cannot infer -- that the result matches the template type.
+    """
+    return cast(
+        RowT, byte_value if isinstance(template, (bytes, bytearray)) else str_value
+    )
 
 
-def _space(like: Row) -> Row:
-    return b" " if isinstance(like, (bytes, bytearray)) else " "
+def _blank(like: RowT) -> RowT:
+    return _like(like, b"", "")
 
 
-def no_separator(left: Row, right: Row) -> Row:
+def _space(like: RowT) -> RowT:
+    return _like(like, b" ", " ")
+
+
+def no_separator(left: RowT, right: RowT) -> RowT:
     """Separator strategy: never insert anything between rows."""
     return _blank(left)
 
 
-def spaced(left: Row, right: Row) -> Row:
+def spaced(left: RowT, right: RowT) -> RowT:
     """Separator strategy: always insert a single space between rows."""
     return _space(left)
 
 
-def lined(left: Row, right: Row) -> Row:
+def lined(left: RowT, right: RowT) -> RowT:
     """Separator strategy: insert a newline between rows."""
-    return b"\n" if isinstance(left, (bytes, bytearray)) else "\n"
+    return _like(left, b"\n", "\n")
 
 
-def dewrapped(left: Row, right: Row) -> Row:
+def dewrapped(left: RowT, right: RowT) -> RowT:
     """Separator strategy that reassembles character-wrapped words.
 
     The BBC's default character wrap can split a word at the 40-column
@@ -167,7 +186,7 @@ def dewrapped(left: Row, right: Row) -> Row:
     return _space(left)
 
 
-def linearise(rows: list[Row], separator: Separator = spaced) -> Row:
+def linearise(rows: list[RowT], separator: Callable[[RowT, RowT], RowT] = spaced) -> RowT:
     """Flatten grid rows into a single sequence for searching or display.
 
     Trailing padding is stripped from each row; ``separator`` decides what to
@@ -182,15 +201,20 @@ def linearise(rows: list[Row], separator: Separator = spaced) -> Row:
         The flattened ``bytes`` or ``str`` (matching the row type).
     """
     if not rows:
-        return ""
-    blank = _blank(rows[0])
-    parts: list[Row] = []
+        # No rows to sample the type from; the historical fallback is an empty
+        # string.
+        return cast(RowT, "")
+    parts: list[RowT] = []
     last = len(rows) - 1
     for index, row in enumerate(rows):
         parts.append(row.rstrip())
         if index < last:
             parts.append(separator(row, rows[index + 1]))
-    return blank.join(parts)
+    # The parts are homogeneous (all the row type), but the type checker cannot
+    # prove join() preserves that, so branch on the concrete type and assert it.
+    if isinstance(rows[0], bytes):
+        return cast(RowT, b"".join(cast("list[bytes]", parts)))
+    return cast(RowT, "".join(cast("list[str]", parts)))
 
 
 # ---------------------------------------------------------------------------

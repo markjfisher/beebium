@@ -29,6 +29,7 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Iterator
 from enum import IntEnum
+from typing import cast
 
 from beebium.client._proto import sideways_pb2, sideways_pb2_grpc
 from beebium.client.exceptions import BeebiumError
@@ -219,7 +220,7 @@ class Sideways:
 
         request = sideways_pb2.ConfigureSlotRequest(
             slot=slot,
-            type=int(slot_type),
+            type=cast("sideways_pb2.SidewaysSlotType.ValueType", int(slot_type)),
         )
         if url is not None:
             request.url = url

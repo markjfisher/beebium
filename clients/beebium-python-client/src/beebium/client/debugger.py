@@ -323,15 +323,14 @@ class Debugger:
         Raises:
             DebuggerError: If the breakpoint cannot be added.
         """
-        kwargs = dict(
+        request = debugger_pb2.AddBreakpointRequest(
             start_address=address,
             end_address=end_address,
             condition=condition,
             stop_counterpart=stop_counterpart,
         )
         if not enabled:
-            kwargs["enabled"] = False
-        request = debugger_pb2.AddBreakpointRequest(**kwargs)
+            request.enabled = False
         try:
             response = self._stub.AddBreakpoint(request)
         except grpc.RpcError as e:
@@ -469,7 +468,7 @@ class Debugger:
             "write": debugger_pb2.WATCHPOINT_WRITE,
             "both": debugger_pb2.WATCHPOINT_BOTH,
         }
-        kwargs = dict(
+        request = debugger_pb2.AddWatchpointRequest(
             start_address=start_address,
             end_address=end_address,
             type=type_map.get(type, debugger_pb2.WATCHPOINT_BOTH),
@@ -477,8 +476,7 @@ class Debugger:
             stop_counterpart=stop_counterpart,
         )
         if not enabled:
-            kwargs["enabled"] = False
-        request = debugger_pb2.AddWatchpointRequest(**kwargs)
+            request.enabled = False
         try:
             response = self._stub.AddWatchpoint(request)
         except grpc.RpcError as e:

@@ -53,6 +53,10 @@ dev = [
     { include-group = "test" },
     "grpcio-tools>=1.60.0",
     "mypy-protobuf>=3.6.0",
+    # The optional-feature dependencies, so the dev environment type-checks the
+    # code that uses them (video PIL export, zeroconf discovery).
+    "Pillow>=10.0.0",
+    "zeroconf>=0.131.0",
 ]
 
 [project.entry-points.pytest11]
@@ -92,3 +96,11 @@ packages = ["src/beebium"]
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
 default = true
+
+[tool.pyright]
+include = ["src", "examples"]
+# The generated protobuf stubs are exercised via their .pyi type stubs but are
+# not themselves hand-written, so don't type-check the generated bodies (they
+# use grpc.experimental, dynamic attributes, etc.).
+exclude = ["**/_proto"]
+typeCheckingMode = "basic"

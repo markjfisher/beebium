@@ -42,10 +42,12 @@ Example usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+
+    from zeroconf import ServiceListener, Zeroconf
 
 # Service type for Beebium discovery
 SERVICE_TYPE = "_beebium._tcp.local."
@@ -133,7 +135,9 @@ class MachineDiscovery:
             ) from e
 
         self._zeroconf = Zeroconf()
-        self._browser = ServiceBrowser(self._zeroconf, SERVICE_TYPE, self)
+        self._browser = ServiceBrowser(
+            self._zeroconf, SERVICE_TYPE, cast("ServiceListener", self)
+        )
 
     def stop(self) -> None:
         """Stop discovery and release resources."""
@@ -191,12 +195,12 @@ class MachineDiscovery:
 
         # Get host address
         addresses = info.parsed_addresses()
-        host = addresses[0] if addresses else info.server
+        host = addresses[0] if addresses else (info.server or "")
 
         machine = DiscoveredMachine(
             name=instance_name,
             host=host,
-            port=info.port,
+            port=info.port or 0,
             uuid=txt.get("uuid", ""),
             model=txt.get("model", ""),
             provenance=txt.get("provenance", ""),

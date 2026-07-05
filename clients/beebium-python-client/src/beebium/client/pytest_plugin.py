@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import grpc
@@ -160,7 +161,7 @@ def bbc(
     mos_filepath: Path,
     basic_filepath: Path | None,
     beebium_server_filepath: Path | None,
-) -> Beebium:
+) -> Iterator[Beebium]:
     """A fresh BBC Micro instance for each test.
 
     The emulator is reset for each test function.
@@ -188,7 +189,7 @@ def bbc_shared(
     mos_filepath: Path,
     basic_filepath: Path | None,
     beebium_server_filepath: Path | None,
-) -> Beebium:
+) -> Iterator[Beebium]:
     """A BBC Micro instance shared across tests in a module.
 
     Use when tests need to build on each other's state.
@@ -215,7 +216,7 @@ def bbc_shared(
 
 
 @pytest.fixture
-def stopped_bbc(bbc: Beebium) -> Beebium:
+def stopped_bbc(bbc: Beebium) -> Iterator[Beebium]:
     """A BBC Micro that starts in stopped state.
 
     Convenience fixture that stops the emulator before yielding.
@@ -236,7 +237,7 @@ def bbc_tube(
     mos_filepath: Path,
     basic_filepath: Path | None,
     beebium_server_filepath: Path | None,
-) -> Beebium:
+) -> Iterator[Beebium]:
     """A BBC Micro instance with Tube coprocessor enabled.
 
     Launches the server with --tube 65C02-3MHz and uses a longer
