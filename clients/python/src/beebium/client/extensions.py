@@ -36,10 +36,18 @@ from beebium.client._proto import (
     peripheral_extension_pb2_grpc as pe_grpc,
 )
 from beebium.client.exceptions import ExtensionError, ExtensionNotLoadedError
-from beebium.client.extension import ExtensionAdapter, create_adapter
+from beebium.client.extension import (
+    PERIPHERAL_ENTRY_POINT_GROUP,
+    ExtensionAdapter,
+    PeripheralExtensionAdapter,
+    create_adapter,
+)
 from beebium.client.extension_rpc import ExtensionChannel
 
-A = TypeVar("A", bound=ExtensionAdapter)
+# Bound to PeripheralExtensionAdapter: bbc.extensions[...] only resolves
+# peripheral extensions. Handing it a transport adapter (e.g. Aun) is a static
+# type error -- use bbc.transport[...] for those.
+A = TypeVar("A", bound=PeripheralExtensionAdapter)
 
 
 class StorageKind(IntEnum):
@@ -239,7 +247,9 @@ class Extensions:
             info = self._require_loaded(name, requested=key.__name__)
             return key(name, self._channel, extension_id=info.id)
         info = self._require_loaded(key, requested=repr(key))
-        return create_adapter(key, self._channel, extension_id=info.id)
+        return create_adapter(
+            key, PERIPHERAL_ENTRY_POINT_GROUP, self._channel, extension_id=info.id
+        )
 
     @overload
     def get(self, key: str, default: None = None) -> ExtensionAdapter | None: ...

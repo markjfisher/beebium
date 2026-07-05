@@ -57,18 +57,23 @@ dev = [
 [project.entry-points.pytest11]
 beebium = "beebium.client.pytest_plugin"
 
-# First-party extension client adapters. The key is the server manifest name
-# (kebab-case); the value points at the concrete ExtensionAdapter subclass in
-# its beebium.ext.<name> package. Third-party extension distributions register
-# into this same group (contributing to the beebium.ext namespace) to have
-# their adapters discovered with no change to the core.
-[project.entry-points."beebium.ext"]
-aun = "beebium.ext.aun:Aun"
-piconet = "beebium.ext.piconet:Piconet"
-rpc-serial = "beebium.ext.rpc_serial:RpcSerial"
-host-serial = "beebium.ext.host_serial:HostSerial"
-acorn-rtc = "beebium.ext.acorn_rtc:AcornRtc"
-acorn-scsi = "beebium.ext.acorn_scsi:AcornScsi"
+# First-party extension client adapters, grouped by the server service that
+# discovers them. The key is the server manifest name (kebab-case); the value
+# points at the concrete adapter class in its beebium.ext.<category>.<name>
+# package. Third-party distributions register into the matching group (and
+# contribute to the beebium.ext.<category> namespace) with no change to core.
+
+# Peripheral extensions (attach to an attachment point; PeripheralExtensionService).
+[project.entry-points."beebium.ext.peripheral"]
+rpc-serial = "beebium.ext.peripheral.rpc_serial:RpcSerial"
+host-serial = "beebium.ext.peripheral.host_serial:HostSerial"
+acorn-rtc = "beebium.ext.peripheral.acorn_rtc:AcornRtc"
+acorn-scsi = "beebium.ext.peripheral.acorn_scsi:AcornScsi"
+
+# Econet transports (provide the Econet wire; EconetTransportService).
+[project.entry-points."beebium.ext.econet"]
+aun = "beebium.ext.econet.aun:Aun"
+piconet = "beebium.ext.econet.piconet:Piconet"
 
 [project.urls]
 Homepage = "https://github.com/rob-smallshire/beebium"

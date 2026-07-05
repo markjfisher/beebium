@@ -22,8 +22,18 @@ service stub.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TypeVar, overload
 
 from beebium.client._proto import econet_transport_pb2, econet_transport_pb2_grpc
+from beebium.client.exceptions import ExtensionError, ExtensionNotLoadedError
+from beebium.client.extension import (
+    ECONET_ENTRY_POINT_GROUP,
+    EconetTransportAdapter,
+    create_adapter,
+)
+from beebium.client.extension_rpc import ExtensionChannel
+
+T = TypeVar("T", bound=EconetTransportAdapter)
 
 
 @dataclass(frozen=True)
@@ -53,19 +63,28 @@ class TransportInfo:
 
 
 class EconetTransport:
-    """Discover which Econet transport extension is active.
+    """Discover the active Econet transport and reach its typed adapter.
+
+    The transport counterpart of ``bbc.extensions``: it lists the loaded Econet
+    transports (AUN, Piconet) and bridges them to typed adapters, keyed by name
+    (generic, base type) or adapter class (concrete type).
 
     Usage:
         if bbc.transport.active is None:
             print("No Econet transport configured")
         elif bbc.transport.active.name == "aun":
-            bbc.extensions[Aun].add_peer(...)
+            bbc.transport[Aun].add_peer(...)      # or Aun.attach(bbc)
         elif bbc.transport.active.name == "piconet":
-            print(bbc.extensions[Piconet].status.device_path)
+            print(bbc.transport[Piconet].status.device_path)
     """
 
-    def __init__(self, stub: econet_transport_pb2_grpc.EconetTransportServiceStub):
+    def __init__(
+        self,
+        stub: econet_transport_pb2_grpc.EconetTransportServiceStub,
+        channel: ExtensionChannel,
+    ):
         self._stub = stub
+        self._channel = channel
 
     def list(self) -> list[TransportInfo]:
         """List all econet transports the server knows about.
@@ -102,4 +121,63 @@ class EconetTransport:
             active=a.active,
             id=a.id,
             has_ui=a.has_ui,
+        )
+
+    # -- Typed / generic adapter access --------------------------------------
+
+    @overload
+    def __getitem__(self, key: str) -> EconetTransportAdapter: ...
+    @overload
+    def __getitem__(self, key: type[T]) -> T: ...
+
+    def __getitem__(self, key: str | type[T]) -> EconetTransportAdapter | T:
+        """Return a client adapter for a loaded Econet transport.
+
+        A class key (``bbc.transport[Aun]``) returns that concrete adapter type;
+        a string key (``bbc.transport["aun"]``) resolves the installed adapter
+        via the ``beebium.ext.econet`` registry, typed as the base
+        ``EconetTransportAdapter``.
+
+        Raises:
+            ExtensionNotLoadedError: if that transport is not loaded.
+            ExtensionAdapterNotInstalledError: (string key) if no adapter is
+                registered for that name.
+        """
+        # Transports route over ExtensionRpc by service name: their
+        # EconetTransportService id targets the *UI* service, not ExtensionRpc,
+        # and a transport is a singleton, so no instance id is bound here.
+        if isinstance(key, type):
+            name = key.EXTENSION_NAME
+            self._require_loaded(name, requested=key.__name__)
+            return key(name, self._channel)
+        self._require_loaded(key, requested=repr(key))
+        return create_adapter(key, ECONET_ENTRY_POINT_GROUP, self._channel)
+
+    @overload
+    def get(self, key: str, default: None = None) -> EconetTransportAdapter | None: ...
+    @overload
+    def get(self, key: type[T], default: None = None) -> T | None: ...
+
+    def get(
+        self, key: str | type[T], default: EconetTransportAdapter | T | None = None
+    ) -> EconetTransportAdapter | T | None:
+        """Like ``self[key]`` but returns ``default`` instead of raising."""
+        try:
+            return self[key]
+        except ExtensionError:
+            return default
+
+    def _require_loaded(self, name: str, *, requested: str) -> TransportInfo:
+        if not name:
+            raise ExtensionNotLoadedError(
+                f"Adapter {requested} does not declare an EXTENSION_NAME."
+            )
+        loaded = self.list()
+        for info in loaded:
+            if info.name == name:
+                return info
+        available = ", ".join(sorted(t.name for t in loaded)) or "(none)"
+        raise ExtensionNotLoadedError(
+            f"Econet transport {name!r} (requested via {requested}) is not "
+            f"loaded on the server. Loaded transports: {available}."
         )

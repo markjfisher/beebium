@@ -79,7 +79,11 @@ from beebium.client.exceptions import (
     ServerStartupError,
     TimeoutError,
 )
-from beebium.client.extension import ExtensionAdapter
+from beebium.client.extension import (
+    EconetTransportAdapter,
+    ExtensionAdapter,
+    PeripheralExtensionAdapter,
+)
 from beebium.client._proto.protocol_fingerprint import PROTOCOL_FINGERPRINT
 from beebium.client.system import (
     AdvertisementState,
@@ -121,7 +125,9 @@ __all__ = [
     "DispatchResult",
     "EconetError",
     "EconetStatus",
+    "EconetTransportAdapter",
     "ExtensionAdapter",
+    "PeripheralExtensionAdapter",
     "ExtensionAdapterNotInstalledError",
     "ExtensionError",
     "ExtensionNotLoadedError",

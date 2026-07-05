@@ -255,6 +255,50 @@ for code that mixes generic and typed use; concrete-first avoids the
 class-as-subscript-key idiom for readers who find it unusual. Generic access
 stays string/`loaded`-based as above.
 
+### 3.6 Two categories: peripheral extensions and Econet transports (decided)
+
+Refines §3.1-3.5. The server discovers adapter-bearing extensions through **two
+distinct services**, and the client mirrors that split rather than pretending
+there is one flat registry:
+
+- **Peripheral extensions** attach to an attachment point (serial-port,
+  1mhz-bus, user-port, tube, scsi, ...) and are discovered via
+  `PeripheralExtensionService`. Adapters: `rpc-serial`, `host-serial`,
+  `acorn-rtc`, `acorn-scsi` (and most future ones).
+- **Econet transports** *provide the Econet wire*, are mutually exclusive, and
+  are discovered via `EconetTransportService`. Adapters: `aun`, `piconet`.
+
+This split is reflected on every axis, for honesty and to make the wrong pairing
+impossible by construction:
+
+| Axis | Peripheral | Econet transport |
+|---|---|---|
+| Import path | `beebium.ext.peripheral.<name>` | `beebium.ext.econet.<name>` |
+| Base class | `PeripheralExtensionAdapter` | `EconetTransportAdapter` |
+| Entry-point group | `beebium.ext.peripheral` | `beebium.ext.econet` |
+| Discovery | `bbc.extensions.loaded` | `bbc.transport.list()` |
+| Typed subscript | `bbc.extensions[AcornRtc]` | `bbc.transport[Aun]` |
+| Concrete-first | `AcornRtc.attach(bbc)` | `Aun.attach(bbc)` |
+
+`Adapter.attach(bbc)` is the one uniform spelling that works for either: each
+category base implements it to route to the right facade (the adapter knows its
+own category). `__getitem__` on `bbc.extensions` is bound to
+`PeripheralExtensionAdapter` and on `bbc.transport` to `EconetTransportAdapter`,
+so handing a transport adapter to `bbc.extensions[...]` is a *static* type error,
+not just a runtime one. Both `ExtensionAdapter` common base and the two category
+bases live in `beebium.client.extension`; the stevedore factory takes the
+entry-point group as a parameter.
+
+Routing note: peripheral adapters bind the `PeripheralExtension` instance id (it
+*is* the ExtensionRpc routing key). Transport adapters route by service name
+(`extension_id=""`) -- a transport is a singleton, and its
+`EconetTransportService` id targets the *UI* service, not ExtensionRpc.
+
+> Discovered while writing the examples: the earlier flat `beebium.ext.*` /
+> `bbc.extensions[...]`-only model (Phase 2) left `aun`/`piconet` unreachable,
+> because they never register with `PeripheralExtensionService`. The two-category
+> model fixes that structurally.
+
 ---
 
 ## 4. Organisation: namespace + distributions
@@ -279,12 +323,12 @@ clients/python/                    # the single beebium distribution root
     client/                        # regular package: Beebium, Connection, all
       __init__.py                  #   core services, framework, _version.py
       _proto/                      #   core service stubs
-      ext -> (namespace, no __init__.py)
-    ext/aun/                       # first-party adapter + its own _proto/aun_pb2
-    ext/piconet/
-    ext/host_serial/               #   dir is underscore; entry-point key "host-serial"
-    ext/rpc_serial/
-    ext/acorn_rtc/  ext/acorn_scsi/
+      ext/                           # namespace (no __init__.py)
+      peripheral/                  # namespace: peripheral extension adapters
+        rpc_serial/                #   adapter + its own _proto/ (key "rpc-serial")
+        host_serial/  acorn_rtc/  acorn_scsi/
+      econet/                      # namespace: Econet transport adapters
+        aun/  piconet/
 ```
 
 > **`packages/` deferred (implemented July 2026).** The design originally nested

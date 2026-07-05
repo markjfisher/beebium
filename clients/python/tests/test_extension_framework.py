@@ -10,11 +10,11 @@
 # You should have received a copy of the GNU General Public License along with Beebium.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the extension-adapter framework (beebium.client.extension) and the
-typed/generic bridge (bbc.extensions[...]).
+"""Tests for the extension-adapter framework and the two typed access facades:
+peripheral extensions via bbc.extensions, Econet transports via bbc.transport.
 
-The registry tests are server-free (they only read entry points and classes).
-The bridge tests launch a real server with the rpc-serial extension loaded.
+Registry tests are server-free; the bridge tests launch a real server with the
+relevant extension loaded.
 """
 
 from __future__ import annotations
@@ -23,132 +23,182 @@ from pathlib import Path
 
 import pytest
 
-from beebium.ext.acorn_rtc import AcornRtc
-from beebium.ext.acorn_scsi import AcornScsi
-from beebium.ext.aun import Aun
 from beebium.client import Beebium
 from beebium.client.exceptions import (
     ExtensionAdapterNotInstalledError,
     ExtensionNotLoadedError,
+    ServerNotFoundError,
 )
 from beebium.client.extension import (
+    ECONET_ENTRY_POINT_GROUP,
+    PERIPHERAL_ENTRY_POINT_GROUP,
+    EconetTransportAdapter,
     ExtensionAdapter,
+    PeripheralExtensionAdapter,
     adapter_type,
     describe_adapter,
     installed_adapter_names,
 )
-from beebium.ext.host_serial import HostSerial
-from beebium.ext.piconet import Piconet
-from beebium.ext.rpc_serial import RpcSerial
-from beebium.client.exceptions import ServerNotFoundError
+from beebium.ext.econet.aun import Aun
+from beebium.ext.econet.piconet import Piconet
+from beebium.ext.peripheral.acorn_rtc import AcornRtc
+from beebium.ext.peripheral.acorn_scsi import AcornScsi
+from beebium.ext.peripheral.host_serial import HostSerial
+from beebium.ext.peripheral.rpc_serial import RpcSerial
 
-
-_FIRST_PARTY = {
-    "aun": Aun,
-    "piconet": Piconet,
-    "rpc-serial": RpcSerial,
-    "host-serial": HostSerial,
-    "acorn-rtc": AcornRtc,
-    "acorn-scsi": AcornScsi,
+_PERIPHERAL = {
+    "rpc-serial": RpcSerial, "host-serial": HostSerial,
+    "acorn-rtc": AcornRtc, "acorn-scsi": AcornScsi,
 }
+_ECONET = {"aun": Aun, "piconet": Piconet}
+_ALL = (
+    [(PERIPHERAL_ENTRY_POINT_GROUP, n, c) for n, c in _PERIPHERAL.items()]
+    + [(ECONET_ENTRY_POINT_GROUP, n, c) for n, c in _ECONET.items()]
+)
 
 
 # --------------------------------------------------------------------------
 # Server-free registry tests
 # --------------------------------------------------------------------------
 
-def test_first_party_adapters_are_registered():
-    names = installed_adapter_names()
-    for name in _FIRST_PARTY:
-        assert name in names, f"{name} adapter not registered in beebium.ext"
+def test_peripheral_group_is_registered():
+    assert set(_PERIPHERAL) <= set(installed_adapter_names(PERIPHERAL_ENTRY_POINT_GROUP))
 
 
-@pytest.mark.parametrize("name,cls", list(_FIRST_PARTY.items()))
-def test_adapter_type_resolves_to_the_concrete_class(name, cls):
-    resolved = adapter_type(name)
-    assert resolved is cls
-    assert issubclass(resolved, ExtensionAdapter)
+def test_econet_group_is_registered():
+    assert set(_ECONET) <= set(installed_adapter_names(ECONET_ENTRY_POINT_GROUP))
 
 
-@pytest.mark.parametrize("name,cls", list(_FIRST_PARTY.items()))
-def test_extension_name_matches_entry_point_key(name, cls):
+@pytest.mark.parametrize("group,name,cls", _ALL)
+def test_adapter_type_resolves_to_the_concrete_class(group, name, cls):
+    assert adapter_type(name, group) is cls
+    assert issubclass(cls, ExtensionAdapter)
+
+
+@pytest.mark.parametrize("group,name,cls", _ALL)
+def test_extension_name_matches_entry_point_key(group, name, cls):
     assert cls.EXTENSION_NAME == name
+
+
+def test_peripheral_adapters_use_the_peripheral_base():
+    for cls in _PERIPHERAL.values():
+        assert issubclass(cls, PeripheralExtensionAdapter)
+
+
+def test_econet_adapters_use_the_transport_base():
+    for cls in _ECONET.values():
+        assert issubclass(cls, EconetTransportAdapter)
 
 
 def test_adapter_type_raises_for_unknown_name():
     with pytest.raises(ExtensionAdapterNotInstalledError):
-        adapter_type("no-such-adapter")
+        adapter_type("no-such-adapter", PERIPHERAL_ENTRY_POINT_GROUP)
 
 
 def test_describe_adapter_reads_the_docstring():
-    text = describe_adapter("rpc-serial", single_line=True)
-    assert text
-    assert "\n" not in text
-    # Full description contains more than the first line.
-    assert len(describe_adapter("rpc-serial")) >= len(text)
+    text = describe_adapter("rpc-serial", PERIPHERAL_ENTRY_POINT_GROUP, single_line=True)
+    assert text and "\n" not in text
+    assert len(describe_adapter("rpc-serial", PERIPHERAL_ENTRY_POINT_GROUP)) >= len(text)
 
 
 # --------------------------------------------------------------------------
-# Integration tests: the bbc.extensions bridge
+# Integration: peripheral bridge (bbc.extensions) with rpc-serial
 # --------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def bbc_rpc_serial(
-    mos_filepath: Path,
-    basic_filepath: Path | None,
-    beebium_server_filepath: Path | None,
-):
+def bbc_rpc_serial(mos_filepath: Path, basic_filepath, beebium_server_filepath):
     try:
         with Beebium.launch(
-            mos_filepath=mos_filepath,
-            basic_filepath=basic_filepath,
-            server_filepath=beebium_server_filepath,
-            extra_args=["--rpc-serial"],
+            mos_filepath=mos_filepath, basic_filepath=basic_filepath,
+            server_filepath=beebium_server_filepath, extra_args=["--rpc-serial"],
         ) as instance:
             yield instance
     except ServerNotFoundError as e:
         pytest.skip(str(e))
 
 
-def test_subscript_by_class_returns_concrete_adapter(bbc_rpc_serial):
+def test_extensions_subscript_by_class(bbc_rpc_serial):
     rpc = bbc_rpc_serial.extensions[RpcSerial]
     assert isinstance(rpc, RpcSerial)
     assert rpc.name == "rpc-serial"
-    # It is bound to the server's instance id from ListExtensions.
     assert rpc.extension_id == bbc_rpc_serial.extensions.info("rpc-serial").id
 
 
-def test_subscript_by_string_returns_a_working_adapter(bbc_rpc_serial):
+def test_extensions_subscript_by_string(bbc_rpc_serial):
     rpc = bbc_rpc_serial.extensions["rpc-serial"]
-    assert isinstance(rpc, ExtensionAdapter)
-    assert isinstance(rpc, RpcSerial)  # concrete class from the registry
+    assert isinstance(rpc, RpcSerial)  # concrete class resolved from the registry
 
 
-def test_attach_classmethod_is_equivalent_to_subscript(bbc_rpc_serial):
-    rpc = RpcSerial.attach(bbc_rpc_serial)
-    assert isinstance(rpc, RpcSerial)
-    assert rpc.extension_id == bbc_rpc_serial.extensions[RpcSerial].extension_id
+def test_extensions_attach_matches_subscript(bbc_rpc_serial):
+    assert RpcSerial.attach(bbc_rpc_serial).extension_id == \
+        bbc_rpc_serial.extensions[RpcSerial].extension_id
 
 
-def test_bound_adapter_actually_drives_the_extension(bbc_rpc_serial):
+def test_bound_peripheral_adapter_drives_the_extension(bbc_rpc_serial):
     rpc = bbc_rpc_serial.extensions[RpcSerial]
-    # send returns the accepted count -- proves the round trip through the
-    # ExtensionRpc channel works end to end.
     assert rpc.send(b"AB") == 2
-    status = rpc.status
-    assert status.rx_pending >= 0
+    assert rpc.status.rx_pending >= 0
 
 
-def test_subscript_for_unloaded_extension_raises(bbc_rpc_serial):
-    # aun is a registered adapter but not loaded on this server.
+def test_extensions_unloaded_peripheral_raises(bbc_rpc_serial):
+    # acorn-rtc is a registered peripheral adapter, but not loaded here.
     with pytest.raises(ExtensionNotLoadedError):
-        _ = bbc_rpc_serial.extensions[Aun]
+        _ = bbc_rpc_serial.extensions[AcornRtc]
 
 
-def test_get_returns_none_for_unloaded_extension(bbc_rpc_serial):
-    assert bbc_rpc_serial.extensions.get(Aun) is None
-    assert bbc_rpc_serial.extensions.get("aun") is None
+def test_extensions_get_returns_none_when_unloaded(bbc_rpc_serial):
+    assert bbc_rpc_serial.extensions.get(AcornRtc) is None
+    assert bbc_rpc_serial.extensions.get("acorn-rtc") is None
 
 
-def test_get_returns_the_adapter_when_loaded(bbc_rpc_serial):
-    assert isinstance(bbc_rpc_serial.extensions.get(RpcSerial), RpcSerial)
+# --------------------------------------------------------------------------
+# Integration: transport bridge (bbc.transport) with AUN
+# --------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def bbc_aun(mos_filepath: Path, basic_filepath, beebium_server_filepath):
+    try:
+        with Beebium.launch(
+            mos_filepath=mos_filepath, basic_filepath=basic_filepath,
+            server_filepath=beebium_server_filepath, extra_args=["--aun", "net=1"],
+        ) as instance:
+            yield instance
+    except ServerNotFoundError as e:
+        pytest.skip(str(e))
+
+
+def test_transport_subscript_by_class(bbc_aun):
+    aun = bbc_aun.transport[Aun]
+    assert isinstance(aun, Aun)
+    assert aun.name == "aun"
+
+
+def test_transport_subscript_by_string(bbc_aun):
+    assert isinstance(bbc_aun.transport["aun"], Aun)
+
+
+def test_transport_attach_matches_subscript(bbc_aun):
+    assert Aun.attach(bbc_aun).extension_id == bbc_aun.transport[Aun].extension_id
+
+
+def test_transport_active_is_aun(bbc_aun):
+    active = bbc_aun.transport.active
+    assert active is not None and active.name == "aun"
+
+
+def test_transport_unloaded_raises(bbc_aun):
+    # piconet is a registered transport adapter, but not the active transport.
+    with pytest.raises(ExtensionNotLoadedError):
+        _ = bbc_aun.transport[Piconet]
+    assert bbc_aun.transport.get(Piconet) is None
+
+
+def test_bound_transport_adapter_drives_the_extension(bbc_aun):
+    # status round-trips through the bridge-bound adapter over ExtensionRpc,
+    # proving the transport bridge reaches the extension end to end. (Mutating
+    # the peer table additionally needs an active AUN backend, which depends on
+    # the emulated machine bringing Econet up -- out of scope here.)
+    aun = bbc_aun.transport[Aun]
+    status = aun.status
+    assert status.peer_count >= 0
+    assert isinstance(aun.peers, list)

@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import pytest
 
-from beebium.ext.aun._proto import aun_pb2
-from beebium.ext.aun import Aun, AunStatus, PeerInfo, PeerSource
+from beebium.ext.econet.aun._proto import aun_pb2
+from beebium.ext.econet.aun import Aun, AunStatus, PeerInfo, PeerSource
 from beebium.client.exceptions import EconetError
 
 

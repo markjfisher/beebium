@@ -15,8 +15,8 @@
 Transport-specific operations (peer table, cable plug, status query)
 live on the relevant transport service:
 
-  - AUN: see ``beebium.ext.aun.Aun`` (wraps AunService)
-  - Piconet: see ``beebium.ext.piconet.Piconet`` (wraps PiconetService)
+  - AUN: see ``beebium.ext.econet.aun.Aun`` (wraps AunService)
+  - Piconet: see ``beebium.ext.econet.piconet.Piconet`` (wraps PiconetService)
 
 Use ``Beebium.transport`` (``EconetTransport``) to discover which one
 is active.
@@ -65,8 +65,8 @@ class EconetStatus:
     """Transport-agnostic Econet hardware status.
 
     For AUN-specific status (port, peer count) use
-    ``beebium.ext.aun.Aun.status``. For Piconet-specific status (device
-    path, serial open) use ``beebium.ext.piconet.Piconet.status``.
+    ``beebium.ext.econet.aun.Aun.status``. For Piconet-specific status (device
+    path, serial open) use ``beebium.ext.econet.piconet.Piconet.status``.
     """
 
     has_econet_socket: bool
@@ -154,8 +154,8 @@ class Econet:
     state, frame counters).
 
     Transport-specific operations (peer table, cable plug, port info)
-    live on a separate client class -- see ``beebium.ext.aun.Aun`` and
-    ``beebium.ext.piconet.Piconet``.
+    live on a separate client class -- see ``beebium.ext.econet.aun.Aun`` and
+    ``beebium.ext.econet.piconet.Piconet``.
 
     Usage:
         # Enable Econet with station ID 254 (binds an AUN socket)

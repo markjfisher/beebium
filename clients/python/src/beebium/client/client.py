@@ -403,7 +403,8 @@ class Beebium:
         """Discover which Econet transport extension is active."""
         if self._econet_transport is None:
             self._econet_transport = EconetTransport(
-                self._connection.econet_transport_stub
+                self._connection.econet_transport_stub,
+                ExtensionChannel(self._connection.extension_rpc_stub),
             )
         return self._econet_transport
 

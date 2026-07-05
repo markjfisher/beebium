@@ -43,9 +43,14 @@ from beebium.client.extension_rpc import ExtensionChannel
 if TYPE_CHECKING:
     from beebium.client import Beebium
 
-# The entry-point group third-party adapters register into. The key of each
-# entry point is the server manifest name (kebab-case: "aun", "host-serial").
-ENTRY_POINT_GROUP = "beebium.ext"
+# Adapters register into one of two entry-point groups, matching the server
+# service that discovers them. The key of each entry point is the server
+# manifest name (kebab-case: "acorn-rtc", "aun"). Peripheral extensions attach
+# to an attachment point (serial-port, 1mhz-bus, ...) and are discovered via
+# PeripheralExtensionService; Econet transports provide the Econet wire and are
+# discovered via EconetTransportService.
+PERIPHERAL_ENTRY_POINT_GROUP = "beebium.ext.peripheral"
+ECONET_ENTRY_POINT_GROUP = "beebium.ext.econet"
 
 
 class ExtensionAdapter(ABC):
@@ -127,11 +132,40 @@ class ExtensionAdapter(ABC):
     def attach(cls, bbc: Beebium) -> Self:
         """Return this adapter bound to ``bbc``, typed as the concrete class.
 
-        The concrete-first equivalent of ``bbc.extensions[cls]``: use whichever
-        reads better. Raises :class:`ExtensionNotLoadedError` if the server has
-        not loaded this extension.
+        The concrete-first equivalent of the category's typed subscript
+        (``bbc.extensions[cls]`` or ``bbc.transport[cls]``). Each category base
+        routes to the right discovery facade. Raises
+        :class:`ExtensionNotLoadedError` if the server has not loaded it.
         """
+        raise NotImplementedError  # implemented per category below
+
+
+class PeripheralExtensionAdapter(ExtensionAdapter):
+    """Base for adapters of peripheral extensions.
+
+    Peripheral extensions attach to an attachment point (serial-port, 1mhz-bus,
+    user-port, tube, scsi, ...) and are discovered via PeripheralExtensionService.
+    Reached with ``bbc.extensions[<Adapter>]`` or ``<Adapter>.attach(bbc)``.
+    Registers under the ``beebium.ext.peripheral`` entry-point group.
+    """
+
+    @classmethod
+    def attach(cls, bbc: Beebium) -> Self:
         return bbc.extensions[cls]
+
+
+class EconetTransportAdapter(ExtensionAdapter):
+    """Base for adapters of Econet transports (the Econet wire backend).
+
+    Econet transports (AUN, Piconet) are mutually exclusive and are discovered
+    via EconetTransportService. Reached with ``bbc.transport[<Adapter>]`` or
+    ``<Adapter>.attach(bbc)``. Registers under the ``beebium.ext.econet``
+    entry-point group.
+    """
+
+    @classmethod
+    def attach(cls, bbc: Beebium) -> Self:
+        return bbc.transport[cls]
 
 
 def _on_load_failure(manager, entrypoint, exception) -> None:
@@ -142,47 +176,47 @@ def _on_load_failure(manager, entrypoint, exception) -> None:
     ) from exception
 
 
-def installed_adapter_names() -> list[str]:
-    """The names of every installed ``beebium.ext`` adapter (no instantiation)."""
+def installed_adapter_names(group: str) -> list[str]:
+    """The names of every installed adapter in ``group`` (no instantiation)."""
     manager = stevedore.ExtensionManager(
-        namespace=ENTRY_POINT_GROUP,
+        namespace=group,
         invoke_on_load=False,
         on_load_failure_callback=_on_load_failure,
     )
     return sorted(manager.names())
 
 
-def adapter_type(name: str) -> type[ExtensionAdapter]:
-    """The adapter *class* registered for ``name`` (no instantiation).
+def adapter_type(name: str, group: str) -> type[ExtensionAdapter]:
+    """The adapter *class* registered for ``name`` in ``group`` (no instantiation).
 
     Raises:
         ExtensionAdapterNotInstalledError: if no adapter is registered for
-            ``name``.
+            ``name`` in ``group``.
     """
     try:
         manager = stevedore.driver.DriverManager(
-            namespace=ENTRY_POINT_GROUP,
+            namespace=group,
             name=name,
             invoke_on_load=False,
             on_load_failure_callback=_on_load_failure,
         )
     except stevedore.exception.NoMatches:
-        installed = installed_adapter_names()
+        installed = installed_adapter_names(group)
         raise ExtensionAdapterNotInstalledError(
-            f"No client adapter is installed for extension {name!r}. "
-            f"Installed adapters: {', '.join(installed) or '(none)'}."
+            f"No client adapter is installed for extension {name!r} in "
+            f"{group!r}. Installed: {', '.join(installed) or '(none)'}."
         ) from None
     return manager.driver
 
 
-def describe_adapter(name: str, *, single_line: bool = False) -> str:
-    """Describe the adapter registered for ``name`` without instantiating it."""
-    return adapter_type(name).describe(single_line=single_line)
+def describe_adapter(name: str, group: str, *, single_line: bool = False) -> str:
+    """Describe the adapter registered for ``name`` in ``group``, no instantiation."""
+    return adapter_type(name, group).describe(single_line=single_line)
 
 
 def create_adapter(
-    name: str, channel: ExtensionChannel, extension_id: str = ""
+    name: str, group: str, channel: ExtensionChannel, extension_id: str = ""
 ) -> ExtensionAdapter:
-    """Instantiate the adapter registered for ``name``, bound to ``channel``."""
-    cls = adapter_type(name)
+    """Instantiate the adapter registered for ``name`` in ``group``."""
+    cls = adapter_type(name, group)
     return cls(name, channel, extension_id=extension_id)

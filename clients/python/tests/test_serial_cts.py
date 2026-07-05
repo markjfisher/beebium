@@ -34,7 +34,7 @@ import pytest
 from beebium.client import Beebium
 from beebium.client.exceptions import ServerNotFoundError
 from beebium.client.screen import screen_contains
-from beebium.ext.rpc_serial import RpcSerial
+from beebium.ext.peripheral.rpc_serial import RpcSerial
 
 # Zero-page (user space) sentinel the program sets when it completes. A memory
 # sentinel is unambiguous; a screen one would collide with the program listing

@@ -97,11 +97,11 @@ gen_ext() {
     postprocess "$out"
 }
 
-gen_ext aun         "$EXTENSIONS_DIR/aun"        "$EXTENSIONS_DIR/aun/aun.proto"
-gen_ext piconet     "$EXTENSIONS_DIR/piconet"    "$EXTENSIONS_DIR/piconet/piconet_service.proto"
-gen_ext rpc_serial  "$EXTENSIONS_DIR/rpc-serial" "$EXTENSIONS_DIR/rpc-serial/rpc_serial.proto"
-gen_ext host_serial "$EXTENSIONS_DIR/host-serial" "$EXTENSIONS_DIR/host-serial/host_serial.proto"
-gen_ext acorn_rtc   "$EXTENSIONS_DIR/acorn-rtc"  "$EXTENSIONS_DIR/acorn-rtc/acorn_rtc.proto"
-gen_ext acorn_scsi  "$EXTENSIONS_DIR/acorn-scsi" "$EXTENSIONS_DIR/acorn-scsi/scsi_host_adapter.proto"
+gen_ext econet/aun          "$EXTENSIONS_DIR/aun"        "$EXTENSIONS_DIR/aun/aun.proto"
+gen_ext econet/piconet      "$EXTENSIONS_DIR/piconet"    "$EXTENSIONS_DIR/piconet/piconet_service.proto"
+gen_ext peripheral/rpc_serial  "$EXTENSIONS_DIR/rpc-serial" "$EXTENSIONS_DIR/rpc-serial/rpc_serial.proto"
+gen_ext peripheral/host_serial "$EXTENSIONS_DIR/host-serial" "$EXTENSIONS_DIR/host-serial/host_serial.proto"
+gen_ext peripheral/acorn_rtc   "$EXTENSIONS_DIR/acorn-rtc"  "$EXTENSIONS_DIR/acorn-rtc/acorn_rtc.proto"
+gen_ext peripheral/acorn_scsi  "$EXTENSIONS_DIR/acorn-scsi" "$EXTENSIONS_DIR/acorn-scsi/scsi_host_adapter.proto"
 
 echo "Proto files generated successfully."

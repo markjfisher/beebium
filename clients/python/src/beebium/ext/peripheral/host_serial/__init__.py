@@ -23,8 +23,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from beebium.ext.host_serial._proto import host_serial_pb2
-from beebium.client.extension import ExtensionAdapter
+from beebium.ext.peripheral.host_serial._proto import host_serial_pb2
+from beebium.client.extension import PeripheralExtensionAdapter
 
 # The logical service name the host-serial extension's dispatcher registers
 # (matches HostSerialDispatcher::service_name() in the extension).
@@ -42,7 +42,7 @@ class HostSerialConfig:
     open_error: str  # OS error text when serial_open is False
 
 
-class HostSerial(ExtensionAdapter):
+class HostSerial(PeripheralExtensionAdapter):
     """Query and re-point the host-serial bridge.
 
     The HostSerial messages are tunnelled over the core's ExtensionRpc channel;

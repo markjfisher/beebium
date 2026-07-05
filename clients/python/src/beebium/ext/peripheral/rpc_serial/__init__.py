@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from beebium.ext.rpc_serial._proto import rpc_serial_pb2
-from beebium.client.extension import ExtensionAdapter
+from beebium.ext.peripheral.rpc_serial._proto import rpc_serial_pb2
+from beebium.client.extension import PeripheralExtensionAdapter
 
 # The logical service name the rpc-serial extension's dispatcher registers
 # (matches RpcSerialDispatcher::service_name() in the extension).
@@ -38,7 +38,7 @@ class RpcSerialStatus:
     rx_pending: int  # bytes queued (via send()) to deliver to the BBC
 
 
-class RpcSerial(ExtensionAdapter):
+class RpcSerial(PeripheralExtensionAdapter):
     """Drive the client-driven serial peer provided by the rpc-serial extension.
 
     The RpcSerial messages are tunnelled over the core's ExtensionRpc channel;

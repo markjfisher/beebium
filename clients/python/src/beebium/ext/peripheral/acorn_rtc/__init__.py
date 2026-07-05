@@ -23,8 +23,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntEnum
 
-from beebium.ext.acorn_rtc._proto import acorn_rtc_pb2
-from beebium.client.extension import ExtensionAdapter
+from beebium.ext.peripheral.acorn_rtc._proto import acorn_rtc_pb2
+from beebium.client.extension import PeripheralExtensionAdapter
 
 # The logical service name the acorn-rtc dispatcher registers
 # (matches AcornRtcDispatcher::service_name()).
@@ -60,7 +60,7 @@ class RtcActivityEvent:
     timestamp_us: int
 
 
-class AcornRtc(ExtensionAdapter):
+class AcornRtc(PeripheralExtensionAdapter):
     """Real-time clock (acorn-rtc extension).
 
     Usage:

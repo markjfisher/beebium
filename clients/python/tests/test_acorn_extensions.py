@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from beebium.ext.acorn_rtc import AcornRtc, RtcTime
-from beebium.ext.acorn_scsi import AcornScsi, ScsiBusStatus, ScsiTarget
+from beebium.ext.peripheral.acorn_rtc import AcornRtc, RtcTime
+from beebium.ext.peripheral.acorn_scsi import AcornScsi, ScsiBusStatus, ScsiTarget
 from beebium.client import Beebium
 from beebium.client.exceptions import ServerNotFoundError
 

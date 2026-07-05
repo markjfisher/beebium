@@ -25,8 +25,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from beebium.ext.piconet._proto import piconet_service_pb2
-from beebium.client.extension import ExtensionAdapter
+from beebium.ext.econet.piconet._proto import piconet_service_pb2
+from beebium.client.extension import EconetTransportAdapter
 
 # The logical service name the piconet extension's dispatcher registers
 # (matches PiconetDispatcher::service_name() in the extension).
@@ -53,7 +53,7 @@ class PiconetStatus:
     serial_open: bool
 
 
-class Piconet(ExtensionAdapter):
+class Piconet(EconetTransportAdapter):
     """Piconet-specific RPCs.
 
     Available on the server's gRPC surface only when Piconet is the

@@ -23,8 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
 
-from beebium.ext.aun._proto import aun_pb2
-from beebium.client.extension import ExtensionAdapter
+from beebium.ext.econet.aun._proto import aun_pb2
+from beebium.client.extension import EconetTransportAdapter
 
 # The logical service name the AUN extension's dispatcher registers
 # (matches AunDispatcher::service_name() in the extension).
@@ -70,7 +70,7 @@ class PeerInfo:
     source: PeerSource = PeerSource.OPERATOR_CONFIGURED
 
 
-class Aun(ExtensionAdapter):
+class Aun(EconetTransportAdapter):
     """AUN-specific RPCs (peer table, cable plug, port status).
 
     Available on the server's gRPC surface only when AUN is the active
