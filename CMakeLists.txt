@@ -139,6 +139,28 @@ if(BEEBIUM_BUILD_SERVICE)
     # OpenSSL::Crypto in their link interface, so OpenSSL must be found before
     # gRPC is or processing gRPCTargets.cmake fails with a missing target.
     # Harmless on the Linux pkg-config / Windows vcpkg paths below.
+    #
+    # On macOS with Homebrew, OpenSSL is keg-only and not on the default search
+    # path, so the find_package(OpenSSL) below would silently miss it, leaving
+    # OpenSSL::SSL undefined and the Homebrew gRPC config erroring. Hint the
+    # Homebrew prefix. Guarded to the Homebrew path only: skipped under the
+    # vcpkg toolchain (which supplies its own OpenSSL) and when the caller has
+    # already set OPENSSL_ROOT_DIR, so it never redirects those builds.
+    if(APPLE AND NOT VCPKG_TOOLCHAIN AND NOT DEFINED OPENSSL_ROOT_DIR)
+        find_program(BREW_EXECUTABLE brew)
+        if(BREW_EXECUTABLE)
+            execute_process(
+                COMMAND ${BREW_EXECUTABLE} --prefix openssl@3
+                OUTPUT_VARIABLE _brew_openssl_prefix
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+            if(_brew_openssl_prefix AND EXISTS "${_brew_openssl_prefix}")
+                set(OPENSSL_ROOT_DIR "${_brew_openssl_prefix}")
+            endif()
+        endif()
+    endif()
+
     find_package(OpenSSL QUIET)
 
     find_package(gRPC CONFIG QUIET)
