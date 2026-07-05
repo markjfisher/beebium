@@ -196,7 +196,7 @@ def bbc_shared(
 
         def test_run_program(bbc_shared):
             # Assumes previous test loaded the program
-            bbc_shared.debugger.run_until(0x1900)
+            bbc_shared.debugger.run_to(0x1900)
     """
     try:
         with Beebium.launch(

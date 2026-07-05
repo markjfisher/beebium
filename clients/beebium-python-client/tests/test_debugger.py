@@ -166,12 +166,12 @@ class TestBreakpoints:
         assert regs.a == 0x42
         bbc.debugger.remove_breakpoint(bp_id)
 
-    def test_run_until_with_condition(self, bbc):
-        """run_until accepts a breakpoint condition and removes it afterward."""
+    def test_run_to_with_condition(self, bbc):
+        """run_to accepts a breakpoint condition and removes it afterward."""
         # LDX #0; .loop: INX; JMP loop
         code = bytes([0xA2, 0x00, 0xE8, 0x4C, 0x02, 0x04])
         plant_and_run_from(bbc, code)
-        state = bbc.debugger.run_until(0x0402, condition="X == 5")
+        state = bbc.debugger.run_to(0x0402, condition="X == 5")
         assert not state.is_running
         assert bbc.cpu.registers.x == 5
         assert len(bbc.debugger.list_breakpoints()) == 0
@@ -466,12 +466,12 @@ class TestEventStream:
 
         bbc.debugger.clear_breakpoints()
 
-    def test_run_until_uses_stream(self, bbc):
-        """run_until() uses the event stream, not polling."""
+    def test_run_to_uses_stream(self, bbc):
+        """run_to() uses the event stream, not polling."""
         # LDA #$42; STA $0500; NOP
         code = bytes([0xA9, 0x42, 0x8D, 0x00, 0x05, 0xEA])
         plant_and_run_from(bbc, code)
-        state = bbc.debugger.run_until(0x0405)
+        state = bbc.debugger.run_to(0x0405)
         assert not state.is_running
         assert bbc.cpu.a == 0x42
 

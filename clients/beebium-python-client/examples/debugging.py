@@ -38,8 +38,8 @@ def demo(bbc: Beebium) -> None:
     oswrch = bbc.memory.address.peek.word(0x020E)  # follow the WRCHV pointer
     bbc.keyboard.type("PRINT 6*7\r")
 
-    # run_until sets the (temporary) breakpoint, runs, and waits for it to fire.
-    bbc.debugger.run_until(oswrch, condition="A == 0x34")
+    # run_to sets the (temporary) breakpoint, runs, and waits for it to fire.
+    bbc.debugger.run_to(oswrch, condition="A == 0x34")
     char = bbc.cpu.a  # '4' -- the first digit of the printed result 42
     glyph = chr(char) if 32 <= char < 127 else "?"
     print(f"broke as PRINT printed {glyph!r} (${char:02X}) via OSWRCH at ${oswrch:04X}")

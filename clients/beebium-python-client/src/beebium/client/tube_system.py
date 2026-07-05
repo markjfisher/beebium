@@ -30,8 +30,8 @@ class TubeSystem:
     """Manages a host and parasite as a single unit.
 
     Both processors are run and stopped together. Predicates for
-    ``run_until`` are evaluated periodically via peek (side-effect-free)
-    without stopping either processor.
+    ``run_until_or_timeout`` are evaluated periodically via peek
+    (side-effect-free) without stopping either processor.
 
     Usage::
 
@@ -86,7 +86,7 @@ class TubeSystem:
         self._host.debugger.ensure_stopped()
         self._parasite.debugger.ensure_stopped()
 
-    def run_until(
+    def run_until_or_timeout(
         self,
         predicate: Callable[[], bool],
         emulated_seconds: float,
@@ -94,6 +94,8 @@ class TubeSystem:
         chunk_seconds: float = 1.0,
     ) -> bool:
         """Run both processors until predicate returns True or the budget expires.
+
+        The tube-level counterpart of :meth:`Beebium.run_until_or_timeout`.
 
         Execution proceeds in chunks of emulated time. At the end of each
         chunk, both processors stop (via a server-side cycle-budget

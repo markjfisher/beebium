@@ -185,9 +185,8 @@ class Debugger:
         # Step through instructions
         result = bbc.debugger.step(10)
 
-        # Set breakpoint and run until hit
-        bp_id = bbc.debugger.add_breakpoint(0xC000)
-        state = bbc.debugger.run_until(0xC000)
+        # Run to an address (sets a temporary breakpoint)
+        state = bbc.debugger.run_to(0xC000)
     """
 
     def __init__(self, stub: debugger_pb2_grpc.DebuggerControlStub):
@@ -811,9 +810,9 @@ class Debugger:
                 return event
         raise DebuggerError("Execution state stream ended without a stop event")
 
-    # Run-until helpers
+    # Run-to helper
 
-    def run_until(
+    def run_to(
         self,
         address: int,
         *,
@@ -822,12 +821,16 @@ class Debugger:
         stop_counterpart: bool = False,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> ExecutionState:
-        """Run until a temporary breakpoint fires, then return the stopped state.
+        """Run to a temporary breakpoint, then return the stopped state.
 
         Sets a breakpoint (removed again on return, even on error), subscribes to
         the execution-state stream *before* starting -- so it never misses a
         breakpoint that fires immediately -- runs, and waits for the stop. The
         machine is left stopped at the breakpoint.
+
+        This is debugger control -- it stops at a *PC address* in real time.
+        Contrast :meth:`Beebium.run_until_or_timeout`, which fast-forwards
+        emulated time until an arbitrary *predicate* (checked via peek) holds.
 
         Args:
             address: Start address to break at.

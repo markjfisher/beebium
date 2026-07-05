@@ -128,7 +128,7 @@ bbc.debugger.step(10)         # Step 10 instructions
 bbc.debugger.step_cycles(100) # Step 100 cycles
 
 # Run until a (temporary) breakpoint fires -- supports a condition
-state = bbc.debugger.run_until(0xC000, condition="A == 0x42")
+state = bbc.debugger.run_to(0xC000, condition="A == 0x42")
 
 # add_breakpoint returns a Breakpoint you can act on
 bp = bbc.debugger.add_breakpoint(0xC000, condition="A == 0x42")
