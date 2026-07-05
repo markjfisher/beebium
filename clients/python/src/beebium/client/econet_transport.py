@@ -25,11 +25,12 @@ from dataclasses import dataclass
 from typing import TypeVar, overload
 
 from beebium.client._proto import econet_transport_pb2, econet_transport_pb2_grpc
-from beebium.client.exceptions import ExtensionError, ExtensionNotLoadedError
+from beebium.client.exceptions import ExtensionError
 from beebium.client.extension import (
     ECONET_ENTRY_POINT_GROUP,
     EconetTransportAdapter,
     create_adapter,
+    resolve_loaded,
 )
 from beebium.client.extension_rpc import ExtensionChannel
 
@@ -134,24 +135,28 @@ class EconetTransport:
         """Return a client adapter for a loaded Econet transport.
 
         A class key (``bbc.transport[Aun]``) returns that concrete adapter type;
-        a string key (``bbc.transport["aun"]``) resolves the installed adapter
-        via the ``beebium.ext.econet`` registry, typed as the base
-        ``EconetTransportAdapter``.
+        a string key resolves the installed adapter via the ``beebium.ext.econet``
+        registry, typed as the base ``EconetTransportAdapter``. The string may
+        be the manifest name (``"aun"``) or a specific instance id.
 
         Raises:
             ExtensionNotLoadedError: if that transport is not loaded.
+            ExtensionAmbiguousError: if a name matches several loaded transports
+                (address one by its id instead).
             ExtensionAdapterNotInstalledError: (string key) if no adapter is
-                registered for that name.
+                registered for the resolved transport.
         """
-        # Transports route over ExtensionRpc by service name: their
-        # EconetTransportService id targets the *UI* service, not ExtensionRpc,
-        # and a transport is a singleton, so no instance id is bound here.
+        # TODO(#56): transports currently route over ExtensionRpc by *service
+        # name* (extension_id=""), because the EconetTransportService id targets
+        # the UI service, not ExtensionRpc. That is correct only because
+        # transports are mutually-exclusive singletons today. Once transports
+        # gain an ExtensionRpc routing id (issue #56), bind info.id here (as the
+        # peripheral bridge does) and this collapses to the peripheral shape.
         if isinstance(key, type):
-            name = key.EXTENSION_NAME
-            self._require_loaded(name, requested=key.__name__)
-            return key(name, self._channel)
-        self._require_loaded(key, requested=repr(key))
-        return create_adapter(key, ECONET_ENTRY_POINT_GROUP, self._channel)
+            info = self._require_loaded(key.EXTENSION_NAME, requested=key.__name__)
+            return key(info.name, self._channel)
+        info = self._require_loaded(key, requested=repr(key))
+        return create_adapter(info.name, ECONET_ENTRY_POINT_GROUP, self._channel)
 
     @overload
     def get(self, key: str, default: None = None) -> EconetTransportAdapter | None: ...
@@ -167,17 +172,7 @@ class EconetTransport:
         except ExtensionError:
             return default
 
-    def _require_loaded(self, name: str, *, requested: str) -> TransportInfo:
-        if not name:
-            raise ExtensionNotLoadedError(
-                f"Adapter {requested} does not declare an EXTENSION_NAME."
-            )
-        loaded = self.list()
-        for info in loaded:
-            if info.name == name:
-                return info
-        available = ", ".join(sorted(t.name for t in loaded)) or "(none)"
-        raise ExtensionNotLoadedError(
-            f"Econet transport {name!r} (requested via {requested}) is not "
-            f"loaded on the server. Loaded transports: {available}."
+    def _require_loaded(self, key: str, *, requested: str) -> TransportInfo:
+        return resolve_loaded(
+            self.list(), key, requested=requested, kind="Econet transport"
         )

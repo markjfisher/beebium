@@ -37,7 +37,12 @@ import stevedore
 import stevedore.driver
 import stevedore.exception
 
-from beebium.client.exceptions import ExtensionAdapterNotInstalledError, ExtensionError
+from beebium.client.exceptions import (
+    ExtensionAdapterNotInstalledError,
+    ExtensionAmbiguousError,
+    ExtensionError,
+    ExtensionNotLoadedError,
+)
 from beebium.client.extension_rpc import ExtensionChannel
 
 if TYPE_CHECKING:
@@ -220,3 +225,45 @@ def create_adapter(
     """Instantiate the adapter registered for ``name`` in ``group``."""
     cls = adapter_type(name, group)
     return cls(name, channel, extension_id=extension_id)
+
+
+def resolve_loaded(entries, key: str, *, requested: str, kind: str):
+    """Return the single loaded entry matching ``key`` (a name or instance id).
+
+    ``entries`` are the loaded records (objects with ``.name`` and ``.id`` --
+    ``ExtensionInfo`` or ``TransportInfo``), and ``key`` is a manifest name or an
+    instance id. Shared by both the peripheral and transport bridges so they
+    resolve and disambiguate identically.
+
+    Raises:
+        ExtensionNotLoadedError: if nothing matches.
+        ExtensionAmbiguousError: if several match -- i.e. a name/type key with
+            more than one loaded instance; address one by its id instead.
+
+    TODO(#56): today Econet transports are mutually-exclusive singletons and
+    route ExtensionRpc by *service name*, so for the transport bridge the ">1
+    match" branch is currently unreachable and the resolved id is not used for
+    routing. Once transports gain an ExtensionRpc routing id (see issue #56),
+    the transport bridge can bind ``entry.id`` the way the peripheral bridge
+    already does, the service-name routing workaround goes away, and this shared
+    resolver handles multi-instance transports (e.g. a 2-ADLC Econet Bridge)
+    with no further change.
+    """
+    if not key:
+        raise ExtensionNotLoadedError(
+            f"{requested} does not declare an EXTENSION_NAME."
+        )
+    matches = [e for e in entries if e.name == key or e.id == key]
+    if not matches:
+        available = ", ".join(sorted(e.name for e in entries)) or "(none)"
+        raise ExtensionNotLoadedError(
+            f"{kind} {key!r} (requested via {requested}) is not loaded on the "
+            f"server. Loaded: {available}."
+        )
+    if len(matches) > 1:
+        ids = ", ".join(m.id for m in matches)
+        raise ExtensionAmbiguousError(
+            f"{len(matches)} instances of {kind} {key!r} are loaded; address one "
+            f'by its id (["<id>"]): {ids}.'
+        )
+    return matches[0]

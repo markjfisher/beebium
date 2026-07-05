@@ -106,6 +106,17 @@ class ExtensionNotLoadedError(ExtensionError):
     pass
 
 
+class ExtensionAmbiguousError(ExtensionError):
+    """More than one loaded extension matches a name/type request.
+
+    Raised by the extension/transport bridges when a type or name key matches
+    several loaded instances of the same kind. Address one by its instance id
+    (``bbc.extensions["<id>"]`` / ``bbc.transport["<id>"]``) to disambiguate.
+    """
+
+    pass
+
+
 class ExtensionAdapterNotInstalledError(ExtensionError):
     """No client adapter is installed for a loaded extension.
 

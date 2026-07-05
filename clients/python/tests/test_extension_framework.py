@@ -19,6 +19,7 @@ relevant extension loaded.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,7 @@ import pytest
 from beebium.client import Beebium
 from beebium.client.exceptions import (
     ExtensionAdapterNotInstalledError,
+    ExtensionAmbiguousError,
     ExtensionNotLoadedError,
     ServerNotFoundError,
 )
@@ -38,6 +40,7 @@ from beebium.client.extension import (
     adapter_type,
     describe_adapter,
     installed_adapter_names,
+    resolve_loaded,
 )
 from beebium.ext.econet.aun import Aun
 from beebium.ext.econet.piconet import Piconet
@@ -102,6 +105,44 @@ def test_describe_adapter_reads_the_docstring():
 
 
 # --------------------------------------------------------------------------
+# resolve_loaded: the shared name-or-id resolver (server-free)
+# --------------------------------------------------------------------------
+
+@dataclass
+class _Entry:
+    name: str
+    id: str
+
+
+def test_resolve_loaded_matches_by_name():
+    entry = _Entry("aun", "id-1")
+    assert resolve_loaded([entry], "aun", requested="Aun", kind="transport") is entry
+
+
+def test_resolve_loaded_matches_by_instance_id():
+    entry = _Entry("aun", "id-1")
+    assert resolve_loaded([entry], "id-1", requested="'id-1'", kind="transport") is entry
+
+
+def test_resolve_loaded_raises_when_absent():
+    with pytest.raises(ExtensionNotLoadedError):
+        resolve_loaded([], "aun", requested="Aun", kind="transport")
+
+
+def test_resolve_loaded_empty_key_raises():
+    with pytest.raises(ExtensionNotLoadedError):
+        resolve_loaded([_Entry("aun", "id-1")], "", requested="Aun", kind="transport")
+
+
+def test_resolve_loaded_ambiguous_name_raises_but_id_disambiguates():
+    entries = [_Entry("aun", "id-1"), _Entry("aun", "id-2")]
+    with pytest.raises(ExtensionAmbiguousError):
+        resolve_loaded(entries, "aun", requested="Aun", kind="transport")
+    # The unique instance id resolves cleanly.
+    assert resolve_loaded(entries, "id-2", requested="'id-2'", kind="transport").id == "id-2"
+
+
+# --------------------------------------------------------------------------
 # Integration: peripheral bridge (bbc.extensions) with rpc-serial
 # --------------------------------------------------------------------------
 
@@ -127,6 +168,13 @@ def test_extensions_subscript_by_class(bbc_rpc_serial):
 def test_extensions_subscript_by_string(bbc_rpc_serial):
     rpc = bbc_rpc_serial.extensions["rpc-serial"]
     assert isinstance(rpc, RpcSerial)  # concrete class resolved from the registry
+
+
+def test_extensions_subscript_by_instance_id(bbc_rpc_serial):
+    info = bbc_rpc_serial.extensions.info("rpc-serial")
+    rpc = bbc_rpc_serial.extensions[info.id]  # string key that is an id
+    assert isinstance(rpc, RpcSerial)
+    assert rpc.extension_id == info.id
 
 
 def test_extensions_attach_matches_subscript(bbc_rpc_serial):
@@ -175,6 +223,11 @@ def test_transport_subscript_by_class(bbc_aun):
 
 def test_transport_subscript_by_string(bbc_aun):
     assert isinstance(bbc_aun.transport["aun"], Aun)
+
+
+def test_transport_subscript_by_instance_id(bbc_aun):
+    info = next(t for t in bbc_aun.transport.list() if t.name == "aun")
+    assert isinstance(bbc_aun.transport[info.id], Aun)
 
 
 def test_transport_attach_matches_subscript(bbc_aun):

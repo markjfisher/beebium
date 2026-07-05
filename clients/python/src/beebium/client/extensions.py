@@ -35,12 +35,13 @@ from beebium.client._proto import (
     peripheral_extension_pb2 as pe_pb2,
     peripheral_extension_pb2_grpc as pe_grpc,
 )
-from beebium.client.exceptions import ExtensionError, ExtensionNotLoadedError
+from beebium.client.exceptions import ExtensionError
 from beebium.client.extension import (
     PERIPHERAL_ENTRY_POINT_GROUP,
     ExtensionAdapter,
     PeripheralExtensionAdapter,
     create_adapter,
+    resolve_loaded,
 )
 from beebium.client.extension_rpc import ExtensionChannel
 
@@ -229,26 +230,30 @@ class Extensions:
     def __getitem__(self, key: type[A]) -> A: ...
 
     def __getitem__(self, key: str | type[A]) -> ExtensionAdapter | A:
-        """Return a client adapter for a loaded extension.
+        """Return a client adapter for a loaded peripheral extension.
 
-        A class key (``bbc.extensions[Aun]``) returns that concrete adapter
-        type -- resolved directly from the class, so it carries full static
-        typing. A string key (``bbc.extensions["aun"]``) resolves the installed
-        adapter via the ``beebium.ext`` registry, typed as the base
-        ``ExtensionAdapter``.
+        A class key (``bbc.extensions[AcornRtc]``) returns that concrete adapter
+        type. A string key resolves the installed adapter via the
+        ``beebium.ext.peripheral`` registry, typed as the base
+        ``ExtensionAdapter``; the string may be the manifest name
+        (``"acorn-rtc"``) or a specific instance id.
 
         Raises:
             ExtensionNotLoadedError: if the server has not loaded the extension.
+            ExtensionAmbiguousError: if a name matches several loaded instances
+                (address one by its id instead).
             ExtensionAdapterNotInstalledError: (string key) if no adapter is
-                registered for that name.
+                registered for the resolved extension.
         """
         if isinstance(key, type):
-            name = key.EXTENSION_NAME
-            info = self._require_loaded(name, requested=key.__name__)
-            return key(name, self._channel, extension_id=info.id)
+            info = self._require_loaded(key.EXTENSION_NAME, requested=key.__name__)
+            return key(info.name, self._channel, extension_id=info.id)
         info = self._require_loaded(key, requested=repr(key))
+        # Create from the resolved manifest name (the entry-point key), bound to
+        # the resolved instance id -- so a string that was an id works too.
         return create_adapter(
-            key, PERIPHERAL_ENTRY_POINT_GROUP, self._channel, extension_id=info.id
+            info.name, PERIPHERAL_ENTRY_POINT_GROUP, self._channel,
+            extension_id=info.id,
         )
 
     @overload
@@ -269,16 +274,7 @@ class Extensions:
         except ExtensionError:
             return default
 
-    def _require_loaded(self, name: str, *, requested: str) -> ExtensionInfo:
-        if not name:
-            raise ExtensionNotLoadedError(
-                f"Adapter {requested} does not declare an EXTENSION_NAME."
-            )
-        info = self.info(name)
-        if info is None:
-            available = ", ".join(sorted(e.name for e in self.loaded)) or "(none)"
-            raise ExtensionNotLoadedError(
-                f"Extension {name!r} (requested via {requested}) is not loaded "
-                f"on the server. Loaded extensions: {available}."
-            )
-        return info
+    def _require_loaded(self, key: str, *, requested: str) -> ExtensionInfo:
+        return resolve_loaded(
+            self.loaded, key, requested=requested, kind="extension"
+        )
