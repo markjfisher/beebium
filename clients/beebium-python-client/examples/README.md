@@ -8,7 +8,7 @@ is easy to judge in isolation.
 ## Running
 
 ```bash
-cd clients/python
+cd clients/beebium-python-client
 
 # self-launch a server for the duration (needs a built server + MOS ROM)
 uv run python examples/lifecycle.py \

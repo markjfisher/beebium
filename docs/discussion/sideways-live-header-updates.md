@@ -207,7 +207,7 @@ the server with `--sideways 7:ram` to override.
 ### Shape of the test
 
 This belongs alongside the other heavyweight, disc-building integration
-suites under `integration_tests/`, not in `clients/python/tests/`. Suggested
+suites under `integration_tests/`, not in `clients/beebium-python-client/tests/`. Suggested
 location: `integration_tests/sideways-srload/`, with its own
 `pyproject.toml` depending on `beebium`, `oaknut-dfs`, and `pytest` (same
 pattern as `integration_tests/tube-save/`).
@@ -249,7 +249,7 @@ contract observed end-to-end.
 
 ### Prerequisites the test depends on
 
-- **Python `SidewaysClient`.** `clients/python/src/beebium/_proto/` has no
+- **Python `SidewaysClient`.** `clients/beebium-python-client/src/beebium/_proto/` has no
   `sideways_pb2.py` today; the Sideways service has never been wrapped in
   Python. The wrapper has to land before (or alongside) this test. Following
   the pattern of `econet_transport.py` / `aun.py`, expose `get_slot_status()`,

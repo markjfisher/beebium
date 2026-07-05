@@ -3,7 +3,7 @@
 Status: proposal (branch `python-client`)
 Author: design note, July 2026
 
-This note plans the evolution of `clients/python` against five goals:
+This note plans the evolution of `clients/beebium-python-client` against five goals:
 
 1. **Completeness** -- cover enough of the server's gRPC surface.
 2. **Extensibility** -- mirror Beebium's peripheral-extension model in the Python API.
@@ -317,7 +317,7 @@ namespace. There is no separate `beebium-client` distribution and no
 metapackage.
 
 ```
-clients/python/                    # the single beebium distribution root
+clients/beebium-python-client/                    # the single beebium distribution root
   pyproject.toml
   src/beebium/                     # PEP 420 namespace (no __init__.py)
     client/                        # regular package: Beebium, Connection, all
@@ -332,13 +332,13 @@ clients/python/                    # the single beebium distribution root
 ```
 
 > **`packages/` deferred (implemented July 2026).** The design originally nested
-> this under `clients/python/packages/beebium/` to make room for sibling
+> this under `clients/beebium-python-client/packages/beebium/` to make room for sibling
 > distributions. In practice the `packages/` monorepo layout only earns its keep
 > once a *second* distribution exists, and the "separately deployable" goal is
 > already met by the PEP 420 namespace alone -- a third party can ship
 > `beebium.ext.foo` into the `beebium.ext` namespace regardless of how our
 > repo is laid out. So the single `beebium` distribution stays rooted at
-> `clients/python/`; introduce `packages/` when the first out-of-tree adapter
+> `clients/beebium-python-client/`; introduce `packages/` when the first out-of-tree adapter
 > distribution appears.
 
 - The **`beebium`** distribution owns `beebium.client` (regular package, core
@@ -390,9 +390,9 @@ version lives in one Python file -- `src/beebium/client/_version.py`
 (`__version__ = "..."`) -- read dynamically by the `beebium` distribution's
 `pyproject.toml` (`[project] dynamic = ["version"]`). The restructure
 **removes** the two current `bump-my-version` targets that no longer exist:
-`clients/python/pyproject.toml` (moves to `packages/beebium/pyproject.toml`,
+`clients/beebium-python-client/pyproject.toml` (moves to `packages/beebium/pyproject.toml`,
 version now dynamic -- not a bump target) and
-`clients/python/src/beebium/__init__.py` (gone -- namespace has no
+`clients/beebium-python-client/src/beebium/__init__.py` (gone -- namespace has no
 `__init__`). They are replaced by a single target on
 `packages/beebium/src/beebium/client/_version.py`. Each future separate
 `beebium-ext-<name>` distribution adds its own `_version.py` bump target so it

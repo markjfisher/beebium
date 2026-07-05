@@ -440,7 +440,7 @@ These tests start a local server, connect as a gRPC client, and verify the servi
 The Python client includes integration tests for the debugger:
 
 ```bash
-cd clients/python
+cd clients/beebium-python-client
 source .venv/bin/activate
 python -m pytest tests/test_debugger.py -v
 ```

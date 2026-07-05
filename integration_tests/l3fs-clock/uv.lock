@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 [[package]]
 name = "beebium"
 version = "0.1.0"
-source = { editable = "../../clients/python" }
+source = { editable = "../../clients/beebium-python-client" }
 dependencies = [
     { name = "grpcio" },
     { name = "protobuf" },
@@ -37,7 +37,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "beebium", editable = "../../clients/python" },
+    { name = "beebium", editable = "../../clients/beebium-python-client" },
     { name = "grpcio", specifier = ">=1.60.0" },
     { name = "protobuf", specifier = ">=4.0.0" },
     { name = "pytest", specifier = ">=7.0.0" },

@@ -68,7 +68,7 @@ jobs:
               curl -LsSf https://astral.sh/uv/install.sh | sh
               export PATH="/root/.local/bin:${PATH}"
               uv venv --python 3.12 /venv && . /venv/bin/activate
-              uv pip install --quiet ./clients/python pytest pytest-timeout
+              uv pip install --quiet ./clients/beebium-python-client pytest pytest-timeout
               pytest -q packaging/smoke/test_smoke.py
             '
 

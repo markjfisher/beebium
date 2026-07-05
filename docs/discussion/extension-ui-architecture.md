@@ -425,7 +425,7 @@ design and where it deviates. Written 2026-04-20 after the
   transport-agnostic header (Connection state, Econet Station + edit
   popover) stays hardcoded in NetworkModeView since those are
   transport-agnostic concerns.
-- **Python client** — `clients/python/src/beebium/extension_ui.py`
+- **Python client** — `clients/beebium-python-client/src/beebium/extension_ui.py`
   with dataclass mirrors of every control type, `subscribe_view`
   iterator, `start_background_subscription` daemon-thread pattern,
   type-dispatched `dispatch(payload=bool|str|int|None)`.

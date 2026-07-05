@@ -797,7 +797,7 @@ private:
 Python clients can use the `zeroconf` library for DNS-SD:
 
 ```python
-# clients/python/src/beebium/discovery.py
+# clients/beebium-python-client/src/beebium/discovery.py
 
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -966,7 +966,7 @@ def browse(timeout: float = 2.0) -> list[DiscoveredMachine]:
 Add `zeroconf` to the Python client dependencies:
 
 ```toml
-# clients/python/pyproject.toml
+# clients/beebium-python-client/pyproject.toml
 [project.optional-dependencies]
 discovery = ["zeroconf>=0.131.0"]
 ```
@@ -1058,8 +1058,8 @@ src/discovery/
 
 ### Python Client
 
-- `clients/python/src/beebium/discovery.py` (new)
-- `clients/python/pyproject.toml` (add optional dependency)
+- `clients/beebium-python-client/src/beebium/discovery.py` (new)
+- `clients/beebium-python-client/pyproject.toml` (add optional dependency)
 
 ### macOS Frontend
 

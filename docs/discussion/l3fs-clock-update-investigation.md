@@ -323,14 +323,14 @@ Files modified:
   completion (outside mutex lock)
 - `src/extensions/acorn-rtc/AcornRtcService.hpp` -- implemented
   `WatchActivity()` with bounded thread-safe event queue
-- `clients/python/src/beebium/_proto/acorn_rtc_pb2.py` -- generated Python
+- `clients/beebium-python-client/src/beebium/_proto/acorn_rtc_pb2.py` -- generated Python
   stub
-- `clients/python/src/beebium/_proto/acorn_rtc_pb2_grpc.py` -- generated
+- `clients/beebium-python-client/src/beebium/_proto/acorn_rtc_pb2_grpc.py` -- generated
   Python stub (with fixed import path)
 
 ### Tube OSBYTE throughput test
 
-`clients/python/tests/test_tube_osbyte_throughput.py`
+`clients/beebium-python-client/tests/test_tube_osbyte_throughput.py`
 
 Fast (20s), self-contained test that measures per-call OSBYTE 51 latency
 under normal paced execution with the Tube active. No coupled stepping, no

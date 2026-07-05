@@ -222,8 +222,8 @@ Client A: SetMachineName("Print Server")
 - `src/service/include/beebium/service/SystemService.hpp` - Add `MachineIdentity` struct, `SetMachineName` impl
 - `src/service/include/beebium/service/Server.hpp` - Pass identity to SystemService
 - `src/server/include/beebium/server/ServerMain.hpp` - Add CLI flag parsing, UUID generation
-- `clients/python/src/beebium/system.py` - Add `MachineIdentity` class with name property setter
-- `clients/python/src/beebium/__init__.py` - Export `MachineIdentity`, `ServerStatus`, `ServerStatusEvent`
+- `clients/beebium-python-client/src/beebium/system.py` - Add `MachineIdentity` class with name property setter
+- `clients/beebium-python-client/src/beebium/__init__.py` - Export `MachineIdentity`, `ServerStatus`, `ServerStatusEvent`
 - `clients/macos/Beebium/Beebium/Generated/system.pb.swift` - Regenerated proto bindings
 - `clients/macos/Beebium/Beebium/SystemClient.swift` - Use identity, add `setMachineName()`
 - `oracle/src/types.ts` - Add `MachineIdentity`, `IDENTITY_CHANGED` status

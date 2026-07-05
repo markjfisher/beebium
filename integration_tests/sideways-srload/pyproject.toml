@@ -23,7 +23,7 @@ dependencies = [
 bypass-selection = true
 
 [tool.uv.sources]
-beebium = { path = "../../clients/python", editable = true }
+beebium = { path = "../../clients/beebium-python-client", editable = true }
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple"

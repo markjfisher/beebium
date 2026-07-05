@@ -121,8 +121,8 @@ Third parties are free to use any string value.
 - `src/service/proto/system.proto` - Add `LaunchProvenance` message
 - `src/server/ServerMain.hpp` - Add CLI flag parsing
 - `src/service/SystemService.hpp/.cpp` - Store and report provenance
-- `clients/python/src/beebium/server.py` - Pass provenance flags when launching
-- `clients/python/src/beebium/system.py` - Expose provenance in Python API
+- `clients/beebium-python-client/src/beebium/server.py` - Pass provenance flags when launching
+- `clients/beebium-python-client/src/beebium/system.py` - Expose provenance in Python API
 
 ### C++ Server Side
 

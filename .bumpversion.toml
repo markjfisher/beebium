@@ -52,7 +52,7 @@ replace = '"version": "{new_version}"'
 # The distribution version is dynamic, read from this single source file by
 # hatchling; the pyproject carries no version string to bump.
 [[tool.bumpversion.files]]
-filename = "clients/python/src/beebium/client/_version.py"
+filename = "clients/beebium-python-client/src/beebium/client/_version.py"
 regex = true
 search = '__version__ = "{current_version}"'
 replace = '__version__ = "{new_version}"'

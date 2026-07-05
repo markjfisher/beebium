@@ -22,7 +22,7 @@ comal-soak = "comal_soak.driver:main"
 packages = ["src/comal_soak"]
 
 [tool.uv.sources]
-beebium = { path = "../../clients/python", editable = true }
+beebium = { path = "../../clients/beebium-python-client", editable = true }
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple"

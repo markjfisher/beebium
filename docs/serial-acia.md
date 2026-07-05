@@ -311,7 +311,7 @@ Clients:
 - **macOS**: the serial extensions appear in the Peripherals sidebar through the
   generic server-driven Extension UI — no serial-specific client code.
 
-`clients/python/examples/serial_demo.py` is a runnable end-to-end demo over
+`clients/beebium-python-client/examples/serial_demo.py` is a runnable end-to-end demo over
 `--rpc-serial`.
 
 ### Peripherals sidebar (Extension UI)
@@ -356,7 +356,7 @@ ROM and the device agree on the bytes, and beebium transports them.
 | `tests/test_{host,rpc,loopback}_serial_extension.cpp` | Each extension attaches its device; rpc-serial round-trips over its service. |
 | `tests/test_{host,rpc,loopback}_serial_ui.cpp` | Each extension's `build_view` panel shape. |
 | `tests/test_serial_break_e2e.cpp` | Application-to-application BREAK through the *real 6502*: a beebasm program on an auto-booting disc drives/detects a break against a recording device and a live pySerial peer. See [the pattern](testing-from-disc.md). |
-| `clients/python/tests/test_serial*.py` | Status, the `watch_status` stream, the extension round trips over gRPC, and a real BBC-BASIC `/CTS` end-to-end test. |
+| `clients/beebium-python-client/tests/test_serial*.py` | Status, the `watch_status` stream, the extension round trips over gRPC, and a real BBC-BASIC `/CTS` end-to-end test. |
 
 ## Status / future work
 

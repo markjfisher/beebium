@@ -656,8 +656,8 @@ struct MachineWindowView: View {
 
 | Client | File | Changes |
 |--------|------|---------|
-| Python | `clients/python/src/beebium/client.py` | Add `on_shutdown()`, status watcher thread, `_handle_shutdown()` |
-| Python | `clients/python/src/beebium/server.py` | `ServerProcess` should handle child shutdown cleanly |
+| Python | `clients/beebium-python-client/src/beebium/client.py` | Add `on_shutdown()`, status watcher thread, `_handle_shutdown()` |
+| Python | `clients/beebium-python-client/src/beebium/server.py` | `ServerProcess` should handle child shutdown cleanly |
 | macOS | `clients/macos/.../MachineConnection.swift` | Add status watching, shutdown handling |
 | macOS | `clients/macos/.../MachineWindowView.swift` | Disconnected state UI |
 
@@ -791,8 +791,8 @@ extension SystemClient {
 - `src/service/proto/system.proto` — Add `ShutdownMode`, `ShutdownRequest`, `ShutdownResponse`, `RequestShutdown`
 - `src/service/include/beebium/service/SystemService.hpp` — Add `RequestShutdown` method, integrate `ShutdownManager`
 - `src/server/ServerMain.hpp` — Add `--allow-shutdown` flag, pass to service
-- `clients/python/src/beebium/system.py` — Add `request_shutdown` method
-- `clients/python/src/beebium/server.py` — Update `ServerProcess.stop()` to try RPC first
+- `clients/beebium-python-client/src/beebium/system.py` — Add `request_shutdown` method
+- `clients/beebium-python-client/src/beebium/server.py` — Update `ServerProcess.stop()` to try RPC first
 
 ## Testing
 

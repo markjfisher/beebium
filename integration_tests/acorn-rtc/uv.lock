@@ -16,7 +16,7 @@ requires-dist = [{ name = "click", specifier = ">=8.0.0" }]
 [[package]]
 name = "beebium"
 version = "0.1.0"
-source = { editable = "../../clients/python" }
+source = { editable = "../../clients/beebium-python-client" }
 dependencies = [
     { name = "grpcio" },
     { name = "protobuf" },
@@ -48,7 +48,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "beebium", editable = "../../clients/python" },
+    { name = "beebium", editable = "../../clients/beebium-python-client" },
     { name = "beebium-adfs-tests", editable = "../adfs" },
     { name = "oaknut-dfs" },
     { name = "pytest", specifier = ">=7.0.0" },
@@ -70,7 +70,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "adfs-disc-tools", editable = "../../scripts/adfs-disc-tools" },
-    { name = "beebium", editable = "../../clients/python" },
+    { name = "beebium", editable = "../../clients/beebium-python-client" },
     { name = "oaknut-dfs" },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-timeout", specifier = ">=2.0.0" },

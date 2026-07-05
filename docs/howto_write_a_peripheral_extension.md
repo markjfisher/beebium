@@ -277,7 +277,7 @@ beebium_finalize_plugin(TARGET beebium_ext_my_plugin NAME my-extension)
 > port for the bug and the fix.
 
 Add the proto to the client codegen scripts so the messages reach the clients:
-`clients/python/scripts/generate_proto.sh` and
+`clients/beebium-python-client/scripts/generate_proto.sh` and
 `clients/typescript/scripts/generate-protos.sh`.
 
 ## Step 6: consume it from a client
@@ -286,7 +286,7 @@ Clients reach your API through the one ExtensionRpc channel, never a
 per-extension stub. The wrapper encodes its request, calls
 `channel.invoke(service, method, payload)`, and decodes the reply.
 
-Python (`clients/python/src/beebium/rpc_serial.py` is the model):
+Python (`clients/beebium-python-client/src/beebium/rpc_serial.py` is the model):
 
 ```python
 from beebium._proto import my_extension_pb2

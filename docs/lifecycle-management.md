@@ -225,7 +225,7 @@ fingerprint; all four constants were regenerated together.
 | Heartbeat emit, status stream | `src/service/include/beebium/service/SystemService.hpp` (`WatchServerStatus`) |
 | Status proto / heartbeat enum | `src/service/proto/system.proto` (`SERVER_STATUS_HEARTBEAT`) |
 | Fingerprint generator | `scripts/sync_protocol_fingerprint.py`, `scripts/protocol_fingerprint.py` |
-| Heartbeat cadence test | `clients/python/tests/test_heartbeat.py` |
+| Heartbeat cadence test | `clients/beebium-python-client/tests/test_heartbeat.py` |
 
 ---
 

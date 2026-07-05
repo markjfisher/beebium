@@ -23,7 +23,7 @@ dependencies = [
 packages = ["src/l3fs_test_support"]
 
 [tool.uv.sources]
-beebium = { path = "../../clients/python", editable = true }
+beebium = { path = "../../clients/beebium-python-client", editable = true }
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple"

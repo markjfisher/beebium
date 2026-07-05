@@ -73,7 +73,7 @@ Client suites (run when a phase touches a client or the proto):
 
 ```bash
 # Python
-cd clients/python && uv run --with pytest python -m pytest tests/ -v
+cd clients/beebium-python-client && uv run --with pytest python -m pytest tests/ -v
 # TypeScript (once a serial client exists)
 cd clients/typescript && npm ci && npm run generate-protos && npx tsc --noEmit && npm run test:unit
 # macOS GUI (once a serial panel exists)
@@ -233,14 +233,14 @@ members; tests keep locals).
     configurable per extension via `tx_buffer=N` (rpc-serial and host-serial CLI
     params; default 4096 from one shared constant serial::kDefaultTxBackPressure,
     no longer duplicated). This also enables a full-stack /CTS test driven by real
-    BBC BASIC (clients/python tests/test_serial_cts.py): BASIC routes output to
+    BBC BASIC (clients/beebium-python-client tests/test_serial_cts.py): BASIC routes output to
     RS423 (*FX3,1) and transmits past a shrunk tx_buffer; with the rpc-serial
     client refusing to drain, the device buffer fills, the ULA asserts /CTS, and
     the MOS OSWRCH path blocks -- the guest stalls, the host stays live; draining
     unblocks it. The test synchronises by FEEDBACK (run_until_or_timeout polling
     the BASIC prompt / buffer fill / a zero-page completion sentinel), advancing
     emulated time -- no wall-clock sleeps, so it is robust on slow CI. Fixed the
-    bit-rotted clients/python basic.py helper (memory.peek -> memory.address.peek)
+    bit-rotted clients/beebium-python-client basic.py helper (memory.peek -> memory.address.peek)
     as part of this (it was unused and broken against the current memory API).
 
 ## Phase 4 -- gRPC and clients aligned with conventions

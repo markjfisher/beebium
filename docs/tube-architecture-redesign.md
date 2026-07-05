@@ -668,6 +668,6 @@ depends on 3. Phase 5 depends on 4.
    (like `TubeSocket`'s `std::unique_ptr<TubeHostBackend>`) is an alternative.
 
 5. **What happens to the integration tests?** The TypeScript integration tests
-   in `clients/python/` and `integration_tests/` launch the server as a
+   in `clients/beebium-python-client/` and `integration_tests/` launch the server as a
    subprocess and interact via gRPC. The `--tube` flag needs to be replaced
    with the extension argument. The orphaned-process problem disappears.

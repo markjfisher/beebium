@@ -36,7 +36,7 @@ A single version lives in nine places; the config keeps them equal:
 | Artifact | File(s) |
 |----------|---------|
 | Server (C++) | `CMakeLists.txt` `project(VERSION)` → compiled in as `BEEBIUM_VERSION`; `vcpkg.json` |
-| Python client | `clients/python/pyproject.toml`; `clients/python/src/beebium/__init__.py` (`__version__`) |
+| Python client | `clients/beebium-python-client/pyproject.toml`; `clients/beebium-python-client/src/beebium/__init__.py` (`__version__`) |
 | TypeScript client | `clients/typescript/src/version.ts`; `package.json`; `package-lock.json` |
 | macOS GUI | `clients/macos/Beebium/project.yml` and the generated `project.pbxproj` |
 
@@ -97,7 +97,7 @@ if each computed its own hash they would never match. Instead
 writes the *identical* constant into three committed files:
 
 - `src/service/include/beebium/service/ProtocolFingerprint.hpp` (server)
-- `clients/python/src/beebium/_proto/protocol_fingerprint.py`
+- `clients/beebium-python-client/src/beebium/_proto/protocol_fingerprint.py`
 - `clients/typescript/src/protocol_fingerprint.ts`
 
 These are generated-and-committed like the proto stubs. When a `.proto` changes,

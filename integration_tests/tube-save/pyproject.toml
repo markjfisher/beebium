@@ -23,7 +23,7 @@ dependencies = [
 packages = ["src/tube_save_support"]
 
 [tool.uv.sources]
-beebium = { path = "../../clients/python", editable = true }
+beebium = { path = "../../clients/beebium-python-client", editable = true }
 beebium-adfs-tests = { path = "../adfs", editable = true }
 
 [[tool.uv.index]]

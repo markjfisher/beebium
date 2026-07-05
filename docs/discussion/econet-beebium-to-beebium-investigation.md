@@ -1461,9 +1461,9 @@ and has been modified before.
 | `src/core/include/beebium/tube/TubeSocket.hpp` | `read_stretch_parasite_ticks` counter |
 | `src/service/proto/econet.proto` | Diagnostic fields 13-24 in `GetEconetStatusResponse` |
 | `src/service/include/beebium/service/EconetService.hpp` | Populate diagnostic fields |
-| `clients/python/src/beebium/econet.py` | Diagnostic fields in `EconetStatus` |
-| `clients/python/src/beebium/_proto/econet_pb2.py` | Regenerated proto stubs |
-| `clients/python/src/beebium/_proto/econet_pb2_grpc.py` | Regenerated + relative import fix |
+| `clients/beebium-python-client/src/beebium/econet.py` | Diagnostic fields in `EconetStatus` |
+| `clients/beebium-python-client/src/beebium/_proto/econet_pb2.py` | Regenerated proto stubs |
+| `clients/beebium-python-client/src/beebium/_proto/econet_pb2_grpc.py` | Regenerated + relative import fix |
 
 ### Pre-existing (unchanged by this investigation)
 

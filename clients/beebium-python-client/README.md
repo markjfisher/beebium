@@ -13,7 +13,7 @@ recent Debian/Ubuntu, Fedora) where a system-wide `pip install` is blocked with
 `error: externally-managed-environment`.
 
 ```bash
-cd clients/python
+cd clients/beebium-python-client
 
 # Run anything in the project environment (uv creates it on first use):
 uv run python examples/serial_demo.py --port 50071
@@ -37,7 +37,7 @@ PEP 668 only blocks the *system* environment, so `pip` works fine inside a
 virtualenv:
 
 ```bash
-cd clients/python
+cd clients/beebium-python-client
 python -m venv .venv
 . .venv/bin/activate
 pip install -e .                 # the client
@@ -70,7 +70,7 @@ Either attach to a server you start yourself:
 # terminal 1
 ./build/src/server/beebium-model-b --mos roms/acorn-mos_1_20.rom --port 50071
 # terminal 2
-cd clients/python
+cd clients/beebium-python-client
 uv run python examples/serial_demo.py --port 50071
 ```
 
@@ -78,7 +78,7 @@ uv run python examples/serial_demo.py --port 50071
 binary via `--server` / `$BEEBIUM_SERVER` and a MOS ROM via `--mos`:
 
 ```bash
-cd clients/python
+cd clients/beebium-python-client
 export BEEBIUM_SERVER="$PWD/../../build/src/server/beebium-model-b"
 uv run python examples/serial_demo.py --mos ../../roms/acorn-mos_1_20.rom
 ```

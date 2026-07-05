@@ -123,7 +123,7 @@ enum ProtocolFingerprint {{
 
 _TARGETS = [
     ("src/service/include/beebium/service/ProtocolFingerprint.hpp", render_cpp),
-    ("clients/python/src/beebium/_proto/protocol_fingerprint.py", render_python),
+    ("clients/beebium-python-client/src/beebium/client/_proto/protocol_fingerprint.py", render_python),
     ("clients/typescript/src/protocol_fingerprint.ts", render_typescript),
     ("clients/macos/Beebium/Beebium/ProtocolFingerprint.swift", render_swift),
 ]

@@ -156,7 +156,7 @@ When Econet is enabled: `econet_station=N`
 ### Key files
 
 - `src/service/include/beebium/service/SystemService.hpp` — add TXT record in `SetAdvertisement`
-- `clients/python/src/beebium/discovery.py` — parse `econet_station` from TXT records
+- `clients/beebium-python-client/src/beebium/discovery.py` — parse `econet_station` from TXT records
 
 ---
 
@@ -191,11 +191,11 @@ class Aun:                                  # wraps AunService
 
 ### Key files
 
-- `clients/python/src/beebium/econet.py` — new wrapper class
-- `clients/python/src/beebium/connection.py` — add `econet_stub`
-- `clients/python/src/beebium/client.py` — add `econet` property
-- `clients/python/src/beebium/__init__.py` — export new classes
-- `clients/python/tests/test_econet.py` — mock stub tests
+- `clients/beebium-python-client/src/beebium/econet.py` — new wrapper class
+- `clients/beebium-python-client/src/beebium/connection.py` — add `econet_stub`
+- `clients/beebium-python-client/src/beebium/client.py` — add `econet` property
+- `clients/beebium-python-client/src/beebium/__init__.py` — export new classes
+- `clients/beebium-python-client/tests/test_econet.py` — mock stub tests
 
 ---
 

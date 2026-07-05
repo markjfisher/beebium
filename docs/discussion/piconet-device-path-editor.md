@@ -575,7 +575,7 @@ the rejected R2 direction.
 
 - **Python and TypeScript renderers.** Item J on the original plan;
   needs `EditableChoice` support in
-  `clients/python/src/beebium/extension_ui.py` and the TS client.
+  `clients/beebium-python-client/src/beebium/extension_ui.py` and the TS client.
 - **Manual verification on Slioch (Windows).** Item I, partial.
 - **Reconnect button + auto-reconnect timer.** Out of scope per the
   parent doc

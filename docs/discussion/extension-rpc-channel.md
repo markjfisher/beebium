@@ -418,7 +418,7 @@ def Send(self, req):
     return SendResponse.FromString(env.payload)
 ```
 
-This slots straight into the existing client (`clients/python/src/beebium/`):
+This slots straight into the existing client (`clients/beebium-python-client/src/beebium/`):
 the package already wraps services as typed Python objects; an extension stub
 is one more of those, parameterised by `extension_id`.
 

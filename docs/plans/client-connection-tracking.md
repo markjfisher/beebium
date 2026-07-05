@@ -208,7 +208,7 @@ Text("Connected: \(clientCount) client(s)")
 - `src/service/src/Server.cpp` — Instantiate tracker, pass to services
 - `src/service/include/beebium/service/SystemService.hpp` — Return connection info, track streams
 - `src/service/src/SystemService.cpp` — Implement `WatchConnections`, call tracker on stream lifecycle
-- `clients/python/src/beebium/system.py` — Add `client_count` property
+- `clients/beebium-python-client/src/beebium/system.py` — Add `client_count` property
 
 ## Testing
 

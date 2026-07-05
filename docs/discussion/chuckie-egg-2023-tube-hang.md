@@ -1307,9 +1307,9 @@ the main thread.
 
 | File | Purpose |
 |------|---------|
-| `clients/python/tests/test_tube_chuckie_egg.py` | Test suite (3 pass, 1 fail) |
+| `clients/beebium-python-client/tests/test_tube_chuckie_egg.py` | Test suite (3 pass, 1 fail) |
 | `tests/assets/discs/chuckieEgg2023.ssd` | Disc image |
-| `clients/python/tests/tube_test_helpers.py` | Shared Tube test utilities |
+| `clients/beebium-python-client/tests/tube_test_helpers.py` | Shared Tube test utilities |
 | `tests/test_tube_parasite_port.cpp` | C++ Tube register tests (60 cases) |
 | `tests/test_tube_host_port.cpp` | C++ Tube register tests (32 cases) |
 | `tests/test_tube_ce2023_trace.cpp` | Full-boot interleaved trace test (regression test for the fix) |

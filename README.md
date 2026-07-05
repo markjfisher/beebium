@@ -155,7 +155,7 @@ until you build them). For self-contained distribution builds, see
 ### Python Client
 
 ```bash
-pip install -e clients/python
+pip install -e clients/beebium-python-client
 ```
 
 ## Usage
@@ -174,7 +174,7 @@ pip install -e clients/python
 
 ### Python Client
 
-The Python client (`clients/python`) enables programmatic control of the emulator for testing and automation. Useful for integration testing BBC Micro software in CI pipelines.
+The Python client (`clients/beebium-python-client`) enables programmatic control of the emulator for testing and automation. Useful for integration testing BBC Micro software in CI pipelines.
 
 ```python
 from beebium import Beebium

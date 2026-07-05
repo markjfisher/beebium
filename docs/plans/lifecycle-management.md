@@ -252,15 +252,15 @@ Phase 10 (Welcome Window) depends on Phase 7.6's preset system.
 - `clients/macos/Beebium/Beebium/QuitDialog.swift`
 - `clients/macos/Beebium/Beebium/NewMachineDialog.swift`
 - `clients/macos/Beebium/Beebium/WelcomeWindow.swift`
-- `clients/python/src/beebium/discovery.py`
+- `clients/beebium-python-client/src/beebium/discovery.py`
 
 ### Modified Files
 - `src/service/proto/system.proto`
 - `src/server/ServerMain.hpp`
 - `src/service/SystemService.hpp` / `.cpp`
 - `src/service/Server.hpp` / `.cpp`
-- `clients/python/src/beebium/server.py`
-- `clients/python/src/beebium/system.py`
+- `clients/beebium-python-client/src/beebium/server.py`
+- `clients/beebium-python-client/src/beebium/system.py`
 - `clients/macos/Beebium/Beebium/BeebiumApp.swift`
 
 ---
