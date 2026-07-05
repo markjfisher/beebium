@@ -307,20 +307,50 @@ class Debugger:
     ) -> int:
         """Add a breakpoint on an address range.
 
+        The breakpoint is evaluated when the program counter reaches any address
+        in ``[address, end_address)`` at an instruction boundary, and stops the
+        machine when its ``condition`` (if any) is true.
+
         Args:
-            address: Start address (inclusive). For a single-address breakpoint.
-            end_address: End address (exclusive). 0 means address+1 (single address).
-                Use 0x10000 for a full-range breakpoint that fires at every
-                instruction boundary (useful with a cycle condition).
-            condition: Optional expression evaluated on hit. Empty = unconditional.
-                Use ``hits`` for hit-count logic, e.g. ``"hits == 5"``.
-                Use ``"cycles >= N"`` with a full-range breakpoint for cycle budgets.
-            stop_counterpart: Signal the other processor to stop.
+            address: Start address (inclusive).
+            end_address: End address (exclusive). 0 means ``address + 1`` (a
+                single address). Use ``0x10000`` for a full-range breakpoint,
+                evaluated at every instruction boundary -- typically paired with
+                a ``cycles`` or ``hits`` condition.
+            condition: An expression evaluated each time the breakpoint is
+                reached; the machine only stops when it is non-zero (true). Empty
+                means unconditional. The expression language is C-like:
+
+                - Registers: ``A``, ``X``, ``Y``, ``SP``, ``PC``, ``P`` (``P`` is
+                  the full status byte).
+                - Status flags, each 0 or 1: ``C``, ``Z``, ``I``, ``D``, ``V``,
+                  ``N``.
+                - ``cycles`` -- the total CPU cycle count.
+                - ``hits`` -- how many times this breakpoint has been reached,
+                  counting the current hit.
+                - ``mem[expr]`` -- a side-effect-free byte read of memory (e.g.
+                  ``mem[0x0070]``).
+                - Literals: decimal, ``0x`` hex, ``0b`` binary, ``true``,
+                  ``false``.
+                - Operators: arithmetic ``+ - * / %``, bitwise ``& | ^``,
+                  comparison ``== != < > <= >=``, logical ``&& || !``, and
+                  parentheses for grouping.
+
+                Examples: ``"A == 0x42"``, ``"hits == 5"``, ``"hits % 10 == 0"``,
+                ``"cycles >= 100000"``, ``"X > 0 && mem[0x0070] == 0xFF"``,
+                ``"N && !Z"``.
+            stop_counterpart: Also signal the counterpart processor (host or
+                parasite) to stop -- used to coordinate breakpoints across the
+                Tube.
+            enabled: Whether the breakpoint is active immediately. Pass ``False``
+                to add it disabled; toggle later with :meth:`enable_breakpoint`
+                and :meth:`disable_breakpoint`.
 
         Returns:
             The breakpoint ID.
 
         Raises:
+            InvalidConditionError: If ``condition`` is not a valid expression.
             DebuggerError: If the breakpoint cannot be added.
         """
         request = debugger_pb2.AddBreakpointRequest(
