@@ -23,7 +23,7 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.client.cpu import Registers, StatusRegister
-from beebium.client.debugger import ExecutionStateEvent
+from beebium.client.debugger import Breakpoint, ExecutionStateEvent
 from beebium.client.exceptions import DebuggerError, InvalidConditionError
 from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
 
@@ -101,10 +101,39 @@ class TestBreakpoints:
 
     def test_add_and_list(self, bbc):
         bp_id = bbc.debugger.add_breakpoint(0x1000)
-        assert bp_id > 0
+        assert bp_id.id > 0
         bps = bbc.debugger.list_breakpoints()
         assert len(bps) == 1
         assert bps[0].address == 0x1000
+
+    def test_add_returns_bound_breakpoint(self, bbc):
+        """add_breakpoint returns a Breakpoint carrying its config."""
+        bp = bbc.debugger.add_breakpoint(0x1000, condition="A == 0x42")
+        assert isinstance(bp, Breakpoint)
+        assert bp.address == 0x1000
+        assert bp.condition == "A == 0x42"
+        assert bp.enabled is True
+
+    def test_breakpoint_remove_method(self, bbc):
+        """Breakpoint.remove() removes it from the emulator."""
+        bp = bbc.debugger.add_breakpoint(0x2000)
+        assert bp.remove() is True
+        assert len(bbc.debugger.list_breakpoints()) == 0
+
+    def test_breakpoint_disable_enable_methods(self, bbc):
+        """Breakpoint.disable()/enable() toggle the live breakpoint."""
+        bp = bbc.debugger.add_breakpoint(0x3000)
+        bp.disable()
+        assert bbc.debugger.list_breakpoints()[0].enabled is False
+        bp.enable()
+        assert bbc.debugger.list_breakpoints()[0].enabled is True
+
+    def test_context_manager_yields_breakpoint(self, bbc):
+        """The breakpoint context manager yields a Breakpoint and cleans up."""
+        with bbc.debugger.breakpoint(0x4000, condition="X == 1") as bp:
+            assert isinstance(bp, Breakpoint)
+            assert bp.address == 0x4000
+        assert len(bbc.debugger.list_breakpoints()) == 0
 
     def test_remove(self, bbc):
         bp_id = bbc.debugger.add_breakpoint(0x2000)
@@ -126,7 +155,7 @@ class TestBreakpoints:
         bps = bbc.debugger.list_breakpoints()
         assert len(bps) == 1
         bp = bps[0]
-        assert bp.id == bp_id
+        assert bp.id == bp_id.id
         assert bp.address == 0x0402
         assert bp.condition == "hits == 3"
         assert bp.stop_counterpart is True

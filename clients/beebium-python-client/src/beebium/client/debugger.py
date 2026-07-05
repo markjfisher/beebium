@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import grpc
 
@@ -38,7 +38,15 @@ class ExecutionState:
 
 @dataclass(frozen=True)
 class Breakpoint:
-    """A breakpoint set in the emulator."""
+    """A breakpoint set in the emulator.
+
+    Returned by :meth:`Debugger.add_breakpoint` and
+    :meth:`Debugger.list_breakpoints`, and yielded by the ``breakpoint`` context
+    manager. ``enabled`` and ``hit_count`` are a snapshot from when the object
+    was obtained; the :meth:`enable`, :meth:`disable` and :meth:`remove` methods
+    act on the live breakpoint. Re-query with :meth:`Debugger.list_breakpoints`
+    for current state.
+    """
 
     id: int
     address: int
@@ -47,6 +55,31 @@ class Breakpoint:
     stop_counterpart: bool = False
     hit_count: int = 0
     enabled: bool = True
+    # The debugger this breakpoint belongs to, so it can act on itself. Excluded
+    # from equality and repr so two breakpoints compare by their data alone.
+    _debugger: Debugger | None = field(default=None, repr=False, compare=False)
+
+    def remove(self) -> bool:
+        """Remove this breakpoint from the emulator."""
+        return self._bound().remove_breakpoint(self.id)
+
+    def enable(self) -> None:
+        """Enable this breakpoint (a no-op if already enabled)."""
+        self._bound().enable_breakpoint(self.id)
+
+    def disable(self) -> None:
+        """Disable this breakpoint without removing it."""
+        self._bound().disable_breakpoint(self.id)
+
+    def _bound(self) -> Debugger:
+        if self._debugger is None:
+            raise DebuggerError("this Breakpoint is not bound to a debugger")
+        return self._debugger
+
+
+def _bp_id(breakpoint: Breakpoint | int) -> int:
+    """Return the ID of a Breakpoint, or the int unchanged."""
+    return breakpoint.id if isinstance(breakpoint, Breakpoint) else breakpoint
 
 
 @dataclass(frozen=True)
@@ -273,7 +306,7 @@ class Debugger:
             self.stop()
 
     @contextmanager
-    def running(self):
+    def running(self) -> Iterator[None]:
         """Context manager that ensures the emulator is running on entry
         and restores the previous execution state on exit.
 
@@ -304,7 +337,7 @@ class Debugger:
         condition: str = "",
         stop_counterpart: bool = False,
         enabled: bool = True,
-    ) -> int:
+    ) -> Breakpoint:
         """Add a breakpoint on an address range.
 
         The breakpoint is evaluated when the program counter reaches any address
@@ -347,7 +380,8 @@ class Debugger:
                 and :meth:`disable_breakpoint`.
 
         Returns:
-            The breakpoint ID.
+            The new :class:`Breakpoint` (bound to this debugger, so you can call
+            ``.remove()`` / ``.disable()`` / ``.enable()`` on it).
 
         Raises:
             InvalidConditionError: If ``condition`` is not a valid expression.
@@ -369,7 +403,16 @@ class Debugger:
             raise
         if not response.success:
             raise DebuggerError(f"Failed to add breakpoint at ${address:04X}")
-        return response.id
+        return Breakpoint(
+            id=response.id,
+            address=address,
+            end_address=end_address or (address + 1),
+            condition=condition,
+            stop_counterpart=stop_counterpart,
+            hit_count=0,
+            enabled=enabled,
+            _debugger=self,
+        )
 
     @contextmanager
     def breakpoint(
@@ -380,16 +423,23 @@ class Debugger:
         condition: str = "",
         stop_counterpart: bool = False,
         enabled: bool = True,
-    ):
-        """Context manager that adds a breakpoint and removes it on exit.
+    ) -> Iterator[Breakpoint]:
+        """Add a breakpoint for the duration of a ``with`` block.
+
+        Adds the breakpoint on entry and removes it on exit (also on an
+        exception). The parameters -- ``address``, ``end_address``, ``condition``
+        (including its expression grammar), ``stop_counterpart`` and ``enabled``
+        -- are exactly those of :meth:`add_breakpoint`. Yields the new
+        :class:`Breakpoint`.
 
         Usage::
 
-            with bbc.debugger.breakpoint(0xC000, condition="A == 0x42") as bp_id:
+            with bbc.debugger.breakpoint(0xC000, condition="A == 0x42") as bp:
                 bbc.debugger.run()
                 event = bbc.debugger.wait_for_stop()
+                print(bp.id)
         """
-        bp_id = self.add_breakpoint(
+        bp = self.add_breakpoint(
             address,
             end_address=end_address,
             condition=condition,
@@ -397,20 +447,21 @@ class Debugger:
             enabled=enabled,
         )
         try:
-            yield bp_id
+            yield bp
         finally:
-            self.remove_breakpoint(bp_id)
+            bp.remove()
 
-    def remove_breakpoint(self, breakpoint_id: int) -> bool:
-        """Remove a breakpoint by ID.
+    def remove_breakpoint(self, breakpoint: Breakpoint | int) -> bool:
+        """Remove a breakpoint.
 
         Args:
-            breakpoint_id: The breakpoint ID returned by add_breakpoint().
+            breakpoint: A :class:`Breakpoint` (as returned by add_breakpoint) or
+                its ID.
 
         Returns:
             True if removed, False if not found.
         """
-        request = debugger_pb2.RemoveBreakpointRequest(id=breakpoint_id)
+        request = debugger_pb2.RemoveBreakpointRequest(id=_bp_id(breakpoint))
         response = self._stub.RemoveBreakpoint(request)
         return response.success
 
@@ -430,38 +481,36 @@ class Debugger:
                 stop_counterpart=bp.stop_counterpart,
                 hit_count=bp.hit_count,
                 enabled=bp.enabled,
+                _debugger=self,
             )
             for bp in response.breakpoints
         ]
 
-    def enable_breakpoint(self, breakpoint_id: int) -> None:
-        """Enable a breakpoint."""
-        request = debugger_pb2.EnableBreakpointRequest(
-            id=breakpoint_id,
-            enabled=True,
-        )
+    def enable_breakpoint(self, breakpoint: Breakpoint | int) -> None:
+        """Enable a breakpoint (a Breakpoint or its ID)."""
+        bp_id = _bp_id(breakpoint)
+        request = debugger_pb2.EnableBreakpointRequest(id=bp_id, enabled=True)
         response = self._stub.EnableBreakpoint(request)
         if not response.success:
-            raise DebuggerError(f"Breakpoint {breakpoint_id} not found")
+            raise DebuggerError(f"Breakpoint {bp_id} not found")
 
-    def disable_breakpoint(self, breakpoint_id: int) -> None:
+    def disable_breakpoint(self, breakpoint: Breakpoint | int) -> None:
         """Disable a breakpoint. Hit count and configuration are preserved."""
-        request = debugger_pb2.EnableBreakpointRequest(
-            id=breakpoint_id,
-            enabled=False,
-        )
+        bp_id = _bp_id(breakpoint)
+        request = debugger_pb2.EnableBreakpointRequest(id=bp_id, enabled=False)
         response = self._stub.EnableBreakpoint(request)
         if not response.success:
-            raise DebuggerError(f"Breakpoint {breakpoint_id} not found")
+            raise DebuggerError(f"Breakpoint {bp_id} not found")
 
     @contextmanager
-    def suppressed_breakpoint(self, breakpoint_id: int):
+    def suppressed_breakpoint(self, breakpoint: Breakpoint | int) -> Iterator[int]:
         """Temporarily disable a breakpoint, re-enabling on exit."""
-        self.disable_breakpoint(breakpoint_id)
+        bp_id = _bp_id(breakpoint)
+        self.disable_breakpoint(bp_id)
         try:
-            yield breakpoint_id
+            yield bp_id
         finally:
-            self.enable_breakpoint(breakpoint_id)
+            self.enable_breakpoint(bp_id)
 
     def clear_breakpoints(self) -> int:
         """Remove all breakpoints.
@@ -532,7 +581,7 @@ class Debugger:
         condition: str = "",
         stop_counterpart: bool = False,
         enabled: bool = True,
-    ):
+    ) -> Iterator[int]:
         """Context manager that adds a watchpoint and removes it on exit.
 
         Usage::
@@ -603,7 +652,7 @@ class Debugger:
             raise DebuggerError(f"Watchpoint {watchpoint_id} not found")
 
     @contextmanager
-    def suppressed_watchpoint(self, watchpoint_id: int):
+    def suppressed_watchpoint(self, watchpoint_id: int) -> Iterator[int]:
         """Temporarily disable a watchpoint, re-enabling on exit."""
         self.disable_watchpoint(watchpoint_id)
         try:

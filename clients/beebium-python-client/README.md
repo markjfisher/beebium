@@ -127,11 +127,18 @@ bbc.debugger.reset()          # Reset the machine
 bbc.debugger.step(10)         # Step 10 instructions
 bbc.debugger.step_cycles(100) # Step 100 cycles
 
-# Breakpoints
-bp_id = bbc.debugger.add_breakpoint(0xC000)
+# Breakpoints -- add_breakpoint returns a Breakpoint you can act on
+bp = bbc.debugger.add_breakpoint(0xC000, condition="A == 0x42")
 bbc.debugger.run_until(0xC000)  # Run until address
-bbc.debugger.remove_breakpoint(bp_id)
+bp.disable()                    # toggle without removing
+bp.enable()
+bp.remove()                     # or bbc.debugger.remove_breakpoint(bp)
 bbc.debugger.clear_breakpoints()
+
+# ...or scope it to a block (removed automatically on exit)
+with bbc.debugger.breakpoint(0xC000, condition="hits == 3") as bp:
+    bbc.debugger.run()
+    bbc.debugger.wait_for_stop()
 
 # State queries
 state = bbc.debugger.get_state()
