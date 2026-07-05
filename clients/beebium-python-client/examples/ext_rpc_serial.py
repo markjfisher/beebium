@@ -8,6 +8,7 @@ client: queue bytes for the BBC to receive, and collect bytes it transmits.
 from __future__ import annotations
 
 from _demo import run
+
 from beebium.client import Beebium
 from beebium.ext.peripheral.rpc_serial import RpcSerial
 
@@ -26,5 +27,4 @@ def demo(bbc: Beebium) -> None:
 
 
 if __name__ == "__main__":
-    run(demo, description="rpc-serial peer: send/receive/status.",
-        extra_args=["--rpc-serial"])
+    run(demo, description="rpc-serial peer: send/receive/status.", extra_args=["--rpc-serial"])

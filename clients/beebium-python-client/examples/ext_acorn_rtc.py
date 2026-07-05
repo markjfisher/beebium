@@ -8,6 +8,7 @@ that range too.
 from __future__ import annotations
 
 from _demo import run
+
 from beebium.client import Beebium
 from beebium.ext.peripheral.acorn_rtc import AcornRtc
 
@@ -25,5 +26,8 @@ def demo(bbc: Beebium) -> None:
 
 
 if __name__ == "__main__":
-    run(demo, description="acorn-rtc clock read/set and raw registers.",
-        extra_args=["--acorn-rtc", "layout=7bit-year-in-r7"])
+    run(
+        demo,
+        description="acorn-rtc clock read/set and raw registers.",
+        extra_args=["--acorn-rtc", "layout=7bit-year-in-r7"],
+    )

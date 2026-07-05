@@ -8,6 +8,7 @@ hardware scrolling so a fixed read of screen memory isn't rotated.
 from __future__ import annotations
 
 from _demo import run
+
 from beebium.client import Beebium
 from beebium.client.screen import dump_screen, find, screen_contains
 
@@ -19,9 +20,7 @@ def demo(bbc: Beebium) -> None:
     bbc.keyboard.type('PRINT "HELLO, BEEB"')
     bbc.keyboard.press_return()
 
-    printed = bbc.run_until_or_timeout(
-        lambda: screen_contains(bbc, "HELLO, BEEB"), emulated_seconds=3.0
-    )
+    printed = bbc.run_until_or_timeout(lambda: screen_contains(bbc, "HELLO, BEEB"), emulated_seconds=3.0)
     print(f"output appeared: {printed}\n")
 
     # The whole teletext screen as text, and a cell lookup.

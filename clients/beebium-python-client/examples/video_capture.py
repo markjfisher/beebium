@@ -7,6 +7,7 @@ as a PNG -- PNG export needs Pillow, from the ``imaging`` extra.
 from __future__ import annotations
 
 from _demo import run
+
 from beebium.client import Beebium
 
 
@@ -15,8 +16,10 @@ def demo(bbc: Beebium) -> None:
     print(f"display: {cfg.width}x{cfg.height} @ {cfg.framerate_hz} Hz")
 
     frame = bbc.video.capture_frame()
-    print(f"frame #{frame.frame_number}: {frame.width}x{frame.height}, "
-          f"{len(frame.pixels)} bytes BGRA, cycle {frame.cycle_count}")
+    print(
+        f"frame #{frame.frame_number}: {frame.width}x{frame.height}, "
+        f"{len(frame.pixels)} bytes BGRA, cycle {frame.cycle_count}"
+    )
 
     try:
         frame.save_png("frame.png")

@@ -8,6 +8,7 @@ Requires the server to run AUN as its Econet transport (--aun). AUN is an Econet
 from __future__ import annotations
 
 from _demo import run
+
 from beebium.client import Beebium
 from beebium.client.exceptions import EconetError
 from beebium.ext.econet.aun import Aun
@@ -27,8 +28,7 @@ def demo(bbc: Beebium) -> None:
         aun.add_peer(net=1, stn=254, ip_address="192.168.1.10")
         aun.add_peer(net=1, stn=1, ip_address="192.168.1.11", port=32768)
         for peer in aun.peers:
-            print(f"  net {peer.net} stn {peer.stn} -> "
-                  f"{peer.ip_address}:{peer.port} ({peer.source.name})")
+            print(f"  net {peer.net} stn {peer.stn} -> {peer.ip_address}:{peer.port} ({peer.source.name})")
         aun.set_connected(False)  # unplug the virtual Econet cable
         aun.remove_peer(net=1, stn=1)
         print(f"peer count now: {aun.status.peer_count}")
@@ -37,5 +37,4 @@ def demo(bbc: Beebium) -> None:
 
 
 if __name__ == "__main__":
-    run(demo, description="AUN peer table and cable state.",
-        extra_args=["--aun", "net=1"])
+    run(demo, description="AUN peer table and cable state.", extra_args=["--aun", "net=1"])

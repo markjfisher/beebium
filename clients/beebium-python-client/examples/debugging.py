@@ -7,6 +7,7 @@ the CPU view reads and writes the 6502 registers.
 from __future__ import annotations
 
 from _demo import run
+
 from beebium.client import Beebium
 from beebium.client.screen import screen_contains
 

@@ -8,6 +8,7 @@ BBC's serial line appears as a host pseudo-terminal.
 from __future__ import annotations
 
 from _demo import run
+
 from beebium.client import Beebium
 from beebium.ext.peripheral.host_serial import HostSerial
 
@@ -28,5 +29,4 @@ def demo(bbc: Beebium) -> None:
 
 
 if __name__ == "__main__":
-    run(demo, description="host-serial bridge configuration.",
-        extra_args=["--host-serial", "mode=pty"])
+    run(demo, description="host-serial bridge configuration.", extra_args=["--host-serial", "mode=pty"])

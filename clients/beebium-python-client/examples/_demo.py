@@ -41,21 +41,27 @@ def run(
     """Parse standard arguments, obtain a connected client, and run ``demo``."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
-        "--port", type=int, default=None,
-        help="Attach to a server already running on this gRPC port "
-             "instead of self-launching.",
+        "--port",
+        type=int,
+        default=None,
+        help="Attach to a server already running on this gRPC port instead of self-launching.",
     )
     parser.add_argument(
-        "--server", type=Path, default=None,
-        help="beebium-server executable for self-launch "
-             "(default: $BEEBIUM_SERVER or PATH).",
+        "--server",
+        type=Path,
+        default=None,
+        help="beebium-server executable for self-launch (default: $BEEBIUM_SERVER or PATH).",
     )
     parser.add_argument(
-        "--mos", type=Path, default=None,
+        "--mos",
+        type=Path,
+        default=None,
         help="MOS ROM for self-launch (default: <repo>/roms/acorn-mos_1_20.rom).",
     )
     parser.add_argument(
-        "--basic", type=Path, default=None,
+        "--basic",
+        type=Path,
+        default=None,
         help="BASIC ROM for self-launch (default: <repo>/roms/bbc-basic_2.rom).",
     )
     args = parser.parse_args()

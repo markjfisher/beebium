@@ -1,9 +1,9 @@
 """Simulate a faulty RAM chip by randomly flipping a bit in screen memory.
 
-  Connects to an already-running Beebium emulator and corrupts a single byte
-  in screen memory five times a second, as if one of the DRAM ICs has a
-  stuck or flaky bit.
-  """
+Connects to an already-running Beebium emulator and corrupts a single byte
+in screen memory five times a second, as if one of the DRAM ICs has a
+stuck or flaky bit.
+"""
 
 import argparse
 import random

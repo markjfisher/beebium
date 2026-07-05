@@ -16,6 +16,7 @@ Launched here with --rpc-serial and --aun so both registries have an entry.
 from __future__ import annotations
 
 from _demo import run
+
 from beebium.client import Beebium
 from beebium.client.extension import (
     ECONET_ENTRY_POINT_GROUP,
@@ -31,8 +32,7 @@ def demo(bbc: Beebium) -> None:
     # 1. Peripheral extensions the server loaded (PeripheralExtensionService).
     print("peripheral extensions loaded:")
     for info in bbc.extensions.loaded:
-        print(f"  {info.name:<12} id={info.id[:8]} has_ui={info.has_ui} "
-              f"attaches_to={list(info.attaches_to)}")
+        print(f"  {info.name:<12} id={info.id[:8]} has_ui={info.has_ui} attaches_to={list(info.attaches_to)}")
 
     # 2. Econet transports the server loaded (EconetTransportService).
     print("econet transports loaded:")
@@ -47,13 +47,16 @@ def demo(bbc: Beebium) -> None:
 
     # 4. Reach a loaded extension's adapter -- peripheral via bbc.extensions,
     #    transport via bbc.transport; Adapter.attach(bbc) works for either.
-    rpc = bbc.extensions[RpcSerial]          # peripheral: concrete type
-    aun = bbc.transport[Aun]                 # transport:  concrete type
+    rpc = bbc.extensions[RpcSerial]  # peripheral: concrete type
+    aun = bbc.transport[Aun]  # transport:  concrete type
     print(f"\nrpc-serial via extensions: {type(rpc).__name__}")
     print(f"aun via transport        : {type(aun).__name__}")
     print(f"aun via attach           : {type(Aun.attach(bbc)).__name__}")
 
 
 if __name__ == "__main__":
-    run(demo, description="Discover loaded extensions and reach typed adapters.",
-        extra_args=["--rpc-serial", "--aun", "net=1"])
+    run(
+        demo,
+        description="Discover loaded extensions and reach typed adapters.",
+        extra_args=["--rpc-serial", "--aun", "net=1"],
+    )

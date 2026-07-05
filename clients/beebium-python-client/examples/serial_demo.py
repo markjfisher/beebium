@@ -153,8 +153,7 @@ def main():
         "--mos",
         type=Path,
         default=None,
-        help="Path to the MOS ROM (self-launch mode). "
-        "Defaults to <repo>/roms/acorn-mos_1_20.rom when present.",
+        help="Path to the MOS ROM (self-launch mode). Defaults to <repo>/roms/acorn-mos_1_20.rom when present.",
     )
     parser.add_argument(
         "--basic",

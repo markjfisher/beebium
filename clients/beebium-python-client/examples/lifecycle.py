@@ -7,6 +7,7 @@ emulated-time run helpers on the client, and SystemService's machine identity.
 from __future__ import annotations
 
 from _demo import run
+
 from beebium.client import Beebium
 
 
@@ -25,9 +26,7 @@ def demo(bbc: Beebium) -> None:
     print(f"\nran {bbc.debugger.cycle_count - start} cycles (~0.5s emulated)")
 
     # Or run until a predicate holds, bounded by an emulated-time budget.
-    in_os = bbc.run_until_or_timeout(
-        lambda: bbc.cpu.pc >= 0xC000, emulated_seconds=1.0
-    )
+    in_os = bbc.run_until_or_timeout(lambda: bbc.cpu.pc >= 0xC000, emulated_seconds=1.0)
     print(f"PC reached the OS ROM: {in_os} (PC=${bbc.cpu.pc:04X})")
 
 
