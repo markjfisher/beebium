@@ -26,16 +26,19 @@ def demo(bbc: Beebium) -> None:
         bbc.debugger.step()
         print(f"  step -> PC=${bbc.cpu.pc:04X}")
 
-    # Set a breakpoint at OSWRCH (&FFEE, "write a character"), then make the OS
-    # produce output so we deterministically hit it. A breakpoint used as a
-    # context manager is removed again on exit.
+    # OSWRCH (&FFEE) is the OS "write a character" vector: it writes the byte in
+    # A to the current output. The MOS echoes each typed key through OSWRCH, so
+    # once we queue a keystroke and resume, the next OSWRCH call is that echo --
+    # a deterministic place to hit the breakpoint. We never press Return, so the
+    # PRINT never runs; it is the echo of the first character we break on. A
+    # breakpoint used as a context manager is removed again on exit.
     bbc.run_until_or_timeout(lambda: screen_contains(bbc, ">"), emulated_seconds=3.0)
-    bbc.keyboard.type("PRINT 42")  # each echoed character calls OSWRCH
+    bbc.keyboard.type("PRINT 42")  # queued input; the MOS echoes each key via OSWRCH
 
     with bbc.debugger.breakpoint(0xFFEE):
         bbc.debugger.ensure_running()
         bbc.debugger.wait_for_stop()
-    char = bbc.cpu.a
+    char = bbc.cpu.a  # the byte OSWRCH is about to write -- the echoed "P"
     glyph = chr(char) if 32 <= char < 127 else "?"
     print(f"broke in OSWRCH; character in A = ${char:02X} ({glyph!r})")
 
