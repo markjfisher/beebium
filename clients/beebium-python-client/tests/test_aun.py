@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import pytest
 
-from beebium.ext.econet.aun._proto import aun_pb2
-from beebium.ext.econet.aun import Aun, AunStatus, PeerInfo, PeerSource
 from beebium.client.exceptions import EconetError
+from beebium.ext.econet.aun import Aun, AunStatus, PeerInfo, PeerSource
+from beebium.ext.econet.aun._proto import aun_pb2
 
 
 class FakeChannel:
@@ -32,9 +32,7 @@ class FakeChannel:
 
     def __init__(self):
         self._responses = {
-            "GetStatus": aun_pb2.AunGetStatusResponse(
-                connected=True, local_port=32768, peer_count=0
-            ),
+            "GetStatus": aun_pb2.AunGetStatusResponse(connected=True, local_port=32768, peer_count=0),
             "SetConnected": aun_pb2.AunSetConnectedResponse(success=True),
             "AddPeer": aun_pb2.AunAddPeerResponse(success=True),
             "RemovePeer": aun_pb2.AunRemovePeerResponse(success=True),
@@ -74,9 +72,7 @@ class TestStatus:
     def test_status_returns_dataclass(self, channel, aun):
         channel.set_response(
             "GetStatus",
-            aun_pb2.AunGetStatusResponse(
-                connected=True, local_port=32768, peer_count=2
-            ),
+            aun_pb2.AunGetStatusResponse(connected=True, local_port=32768, peer_count=2),
         )
         status = aun.status
         assert isinstance(status, AunStatus)
@@ -99,9 +95,7 @@ class TestSetConnected:
     def test_set_connected_failure_raises(self, channel, aun):
         channel.set_response(
             "SetConnected",
-            aun_pb2.AunSetConnectedResponse(
-                success=False, error="AUN backend is not active"
-            ),
+            aun_pb2.AunSetConnectedResponse(success=False, error="AUN backend is not active"),
         )
         with pytest.raises(EconetError, match="not active"):
             aun.set_connected(True)
@@ -140,9 +134,7 @@ class TestRemovePeer:
     def test_remove_peer_failure_raises(self, channel, aun):
         channel.set_response(
             "RemovePeer",
-            aun_pb2.AunRemovePeerResponse(
-                success=False, error="AUN backend is not active"
-            ),
+            aun_pb2.AunRemovePeerResponse(success=False, error="AUN backend is not active"),
         )
         with pytest.raises(EconetError, match="not active"):
             aun.remove_peer(net=0, stn=99)
@@ -158,11 +150,17 @@ class TestPeers:
             aun_pb2.AunListPeersResponse(
                 peers=[
                     aun_pb2.AunPeer(
-                        net=0, stn=1, ip_address="192.168.1.1", port=32768,
+                        net=0,
+                        stn=1,
+                        ip_address="192.168.1.1",
+                        port=32768,
                         source=aun_pb2.AUN_PEER_SOURCE_OPERATOR_CONFIGURED,
                     ),
                     aun_pb2.AunPeer(
-                        net=1, stn=254, ip_address="10.0.0.100", port=9999,
+                        net=1,
+                        stn=254,
+                        ip_address="10.0.0.100",
+                        port=9999,
                         source=aun_pb2.AUN_PEER_SOURCE_DISCOVERED,
                     ),
                 ]
@@ -187,7 +185,10 @@ class TestPeers:
             aun_pb2.AunListPeersResponse(
                 peers=[
                     aun_pb2.AunPeer(
-                        net=0, stn=1, ip_address="192.168.1.1", port=32768,
+                        net=0,
+                        stn=1,
+                        ip_address="192.168.1.1",
+                        port=32768,
                         source=aun_pb2.AUN_PEER_SOURCE_UNSPECIFIED,
                     ),
                 ]

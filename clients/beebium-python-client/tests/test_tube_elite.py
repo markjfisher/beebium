@@ -29,21 +29,19 @@ import sys
 from pathlib import Path
 
 import pytest
+from tube_test_helpers import (
+    dump_diagnostics,
+    run_until_or_timeout,
+)
 
 from beebium.client import Beebium
 from beebium.client.exceptions import ServerNotFoundError
-from beebium.client.screen import screen_contains, read_mode7_screen
+from beebium.client.screen import read_mode7_screen, screen_contains
 
 _skip_windows_ci = pytest.mark.skipif(
     sys.platform == "win32" and os.environ.get("CI") == "true",
     reason="Tube pacing too timing-sensitive for Windows CI runners",
 )
-
-from tube_test_helpers import (
-    run_until_or_timeout,
-    dump_diagnostics,
-)
-
 
 ELITE_DISC_FILENAME = "Disc999-EliteSNG45.ssd"
 
@@ -99,8 +97,10 @@ def bbc_tube(
             server_filepath=beebium_server_filepath,
             extra_args=[
                 "--tube-65c02",
-                "--fdc", "acorn-1770",
-                "--sideways", f"14:rom:{dfs_1770_rom_filepath}",
+                "--fdc",
+                "acorn-1770",
+                "--sideways",
+                f"14:rom:{dfs_1770_rom_filepath}",
             ],
             startup_timeout=20.0,
         ) as bbc:
@@ -141,17 +141,13 @@ class TestTubeEliteBoot:
         """After boot, screen should show the Tube banner."""
         assert screen_contains(bbc_tube, "Acorn TUBE")
 
-    def test_insert_elite_disc(
-        self, bbc_tube: Beebium, elite_disc_filepath: Path
-    ) -> None:
+    def test_insert_elite_disc(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
         """Insert the Elite disc into drive 0."""
         metadata = bbc_tube.disc.drive(0).insert(elite_disc_filepath)
         assert metadata.name, "Disc should have a name"
 
         drive_status = bbc_tube.disc.drive(0).status
-        assert drive_status.state.value == "loaded", (
-            f"Drive 0 should be loaded, got {drive_status.state.value}"
-        )
+        assert drive_status.state.value == "loaded", f"Drive 0 should be loaded, got {drive_status.state.value}"
 
     def test_cat_disc(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
         """Type *. to catalog the disc and check output appears."""
@@ -161,16 +157,23 @@ class TestTubeEliteBoot:
             rows = read_mode7_screen(bbc_tube)
             for row in rows:
                 stripped = row.strip()
-                if stripped and stripped != ">" and "BASIC" not in stripped \
-                        and "Acorn TUBE" not in stripped and "Acorn 1770" not in stripped \
-                        and "*." not in stripped:
+                if (
+                    stripped
+                    and stripped != ">"
+                    and "BASIC" not in stripped
+                    and "Acorn TUBE" not in stripped
+                    and "Acorn 1770" not in stripped
+                    and "*." not in stripped
+                ):
                     return True
             return False
 
         bbc_tube.keyboard.type("*.\r")
 
         found = run_until_or_timeout(
-            bbc_tube, _catalog_visible, emulated_seconds=30.0,
+            bbc_tube,
+            _catalog_visible,
+            emulated_seconds=30.0,
         )
 
         if not found:
@@ -199,6 +202,4 @@ class TestTubeEliteBoot:
 
         if not found:
             dump_diagnostics(bbc_tube)
-            pytest.fail(
-                f"Expected '{elite_banner}' on screen after *RUN !BOOT"
-            )
+            pytest.fail(f"Expected '{elite_banner}' on screen after *RUN !BOOT")

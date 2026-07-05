@@ -40,8 +40,8 @@ from beebium.ext.peripheral.rpc_serial import RpcSerial
 # sentinel is unambiguous; a screen one would collide with the program listing
 # echoed above the RUN output.
 _DONE = 0x70
-_PAYLOAD = 128       # bytes transmitted; must exceed the TX buffer + MOS buffer
-_TX_BUFFER = 16      # small, so /CTS engages quickly
+_PAYLOAD = 128  # bytes transmitted; must exceed the TX buffer + MOS buffer
+_TX_BUFFER = 16  # small, so /CTS engages quickly
 
 # 10 route output to RS423; 20 transmit the payload (VDU 65 -> OSWRCH 'A');
 # 30 restore screen output; 40 set the completion sentinel.
@@ -71,9 +71,7 @@ def cts_bbc(mos_filepath, basic_filepath, beebium_server_filepath):
 
 def _until(bbc, predicate, *, budget=60.0):
     """Run until predicate() holds, advancing emulated time. Fails on timeout."""
-    assert bbc.run_until_or_timeout(predicate, emulated_seconds=budget), (
-        "timed out waiting for the polled condition"
-    )
+    assert bbc.run_until_or_timeout(predicate, emulated_seconds=budget), "timed out waiting for the polled condition"
 
 
 def test_full_buffer_asserts_cts_and_stalls_only_the_guest(cts_bbc):

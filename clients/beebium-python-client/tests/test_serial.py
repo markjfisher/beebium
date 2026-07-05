@@ -63,10 +63,12 @@ def test_status_parses_response():
 
 def test_watch_status_yields_statuses():
     stub = MagicMock()
-    stub.WatchSerialStatus.return_value = iter([
-        _make_status_proto(rs423_selected=True),
-        _make_status_proto(rs423_selected=False),
-    ])
+    stub.WatchSerialStatus.return_value = iter(
+        [
+            _make_status_proto(rs423_selected=True),
+            _make_status_proto(rs423_selected=False),
+        ]
+    )
     serial = Serial(stub)
 
     statuses = list(serial.watch_status())

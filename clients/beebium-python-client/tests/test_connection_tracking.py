@@ -23,8 +23,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
-import pytest
-
 from beebium.client import Beebium
 from beebium.client.system import ServerStatus
 
@@ -109,9 +107,7 @@ class TestMultipleClients:
         threads = []
         try:
             # Start first watcher
-            t1 = threading.Thread(
-                target=watch_for_client, args=(watcher_clients[0], 0), daemon=True
-            )
+            t1 = threading.Thread(target=watch_for_client, args=(watcher_clients[0], 0), daemon=True)
             t1.start()
             threads.append(t1)
             assert watchers_started[0].wait(timeout=5.0)
@@ -119,9 +115,7 @@ class TestMultipleClients:
             assert bbc.system.client_count == 1
 
             # Start second watcher
-            t2 = threading.Thread(
-                target=watch_for_client, args=(watcher_clients[1], 1), daemon=True
-            )
+            t2 = threading.Thread(target=watch_for_client, args=(watcher_clients[1], 1), daemon=True)
             t2.start()
             threads.append(t2)
             assert watchers_started[1].wait(timeout=5.0)

@@ -37,8 +37,7 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.client.exceptions import ServerNotFoundError
-from beebium.client.screen import dump_screen, screen_contains, read_mode7_screen
-
+from beebium.client.screen import dump_screen, read_mode7_screen, screen_contains
 
 _skip_windows_ci = pytest.mark.skipif(
     sys.platform == "win32" and os.environ.get("CI") == "true",
@@ -85,7 +84,8 @@ def bbc_anfs_tube(
             basic_filepath=basic_filepath,
             server_filepath=server_filepath,
             extra_args=[
-                "--sideways", f"9:rom:{anfs_filepath}",
+                "--sideways",
+                f"9:rom:{anfs_filepath}",
                 "--tube-65c02",
             ],
             startup_timeout=20.0,
@@ -100,8 +100,7 @@ def bbc_anfs_tube(
                 for i, row in enumerate(rows):
                     print(f"Row {i:2d}: [{row}]")
                 pytest.fail(
-                    f"Tube banner '{TUBE_BANNER}' did not appear within "
-                    f"{BOOT_TIMEOUT_SECONDS}s of emulated time"
+                    f"Tube banner '{TUBE_BANNER}' did not appear within {BOOT_TIMEOUT_SECONDS}s of emulated time"
                 )
             yield bbc
     except ServerNotFoundError as e:

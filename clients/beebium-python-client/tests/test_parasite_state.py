@@ -19,14 +19,13 @@ host and parasite report independent CPU registers and memory.
 from __future__ import annotations
 
 import sys
-import time
 from pathlib import Path
 
 import pytest
 
 from beebium.client import Beebium
 from beebium.client.exceptions import ServerNotFoundError
-from beebium.client.screen import screen_contains, read_mode7_screen
+from beebium.client.screen import screen_contains
 
 
 @pytest.fixture(scope="function")
@@ -55,7 +54,8 @@ def bbc_with_tube(beebium_roms_dirpath: Path, mos_filepath: Path, basic_filepath
             basic_filepath=basic_filepath,
             server_filepath=server,
             extra_args=[
-                "--sideways", f"9:rom:{anfs}",
+                "--sideways",
+                f"9:rom:{anfs}",
                 "--tube-65c02",
             ],
             startup_timeout=20.0,
@@ -104,10 +104,14 @@ def test_parasite_cpu_differs_from_host(bbc_with_tube):
         f"X=${para_regs.x:02X} Y=${para_regs.y:02X} SP=${para_regs.sp:02X}"
     )
 
-    print(f"Host:     PC=${host_regs.pc:04X} A=${host_regs.a:02X} "
-          f"X=${host_regs.x:02X} Y=${host_regs.y:02X} SP=${host_regs.sp:02X}")
-    print(f"Parasite: PC=${para_regs.pc:04X} A=${para_regs.a:02X} "
-          f"X=${para_regs.x:02X} Y=${para_regs.y:02X} SP=${para_regs.sp:02X}")
+    print(
+        f"Host:     PC=${host_regs.pc:04X} A=${host_regs.a:02X} "
+        f"X=${host_regs.x:02X} Y=${host_regs.y:02X} SP=${host_regs.sp:02X}"
+    )
+    print(
+        f"Parasite: PC=${para_regs.pc:04X} A=${para_regs.a:02X} "
+        f"X=${para_regs.x:02X} Y=${para_regs.y:02X} SP=${para_regs.sp:02X}"
+    )
 
 
 def test_parasite_memory_differs_from_host(bbc_with_tube):
@@ -141,6 +145,5 @@ def test_parasite_memory_differs_from_host(bbc_with_tube):
     print(f"Parasite ZP $00-$0F: {para_zp.hex()}")
 
     assert host_zp != para_zp, (
-        "Host and parasite zero page are identical -- "
-        "parasite client is likely returning host memory."
+        "Host and parasite zero page are identical -- parasite client is likely returning host memory."
     )

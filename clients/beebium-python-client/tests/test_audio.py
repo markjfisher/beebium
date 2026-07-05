@@ -27,10 +27,10 @@ from beebium.client.audio import (
     _audio_format_from_proto,
 )
 
-
 # --------------------------------------------------------------------------
 # Server-free conversion test
 # --------------------------------------------------------------------------
+
 
 def test_audio_format_from_proto_maps_sources_and_encoding():
     proto = audio_pb2.AudioFormat(sample_rate=48000, source_count=1)
@@ -57,6 +57,7 @@ def test_audio_format_from_proto_maps_sources_and_encoding():
 # --------------------------------------------------------------------------
 # Integration tests (real server)
 # --------------------------------------------------------------------------
+
 
 def test_format_reports_sample_rate_and_sources(bbc):
     fmt = bbc.audio.format

@@ -39,21 +39,19 @@ import sys
 from pathlib import Path
 
 import pytest
+from tube_test_helpers import (
+    dump_diagnostics,
+    run_until_or_timeout,
+)
 
 from beebium.client import Beebium
 from beebium.client.exceptions import ServerNotFoundError
-from beebium.client.screen import screen_contains, read_mode7_screen
+from beebium.client.screen import read_mode7_screen, screen_contains
 
 _skip_windows_ci = pytest.mark.skipif(
     sys.platform == "win32" and os.environ.get("CI") == "true",
     reason="Tube pacing too timing-sensitive for Windows CI runners",
 )
-
-from tube_test_helpers import (
-    run_until_or_timeout,
-    dump_diagnostics,
-)
-
 
 CHUCKIE_EGG_DISC_FILENAME = "chuckieEgg2023.ssd"
 
@@ -76,8 +74,7 @@ def _find_chuckie_egg_disc() -> Path | None:
     return None
 
 
-def _boot_to_text(bbc: Beebium, disc_filepath: Path, target_text: str,
-                  emulated_seconds: float = 15.0) -> bool:
+def _boot_to_text(bbc: Beebium, disc_filepath: Path, target_text: str, emulated_seconds: float = 15.0) -> bool:
     """Insert disc, *EXEC !BOOT, and run until target_text appears on screen."""
     bbc.disc.drive(0).insert(disc_filepath)
     bbc.keyboard.type("*EXEC !BOOT\r")
@@ -121,8 +118,10 @@ def bbc_tube(
             server_filepath=beebium_server_filepath,
             extra_args=[
                 "--tube-65c02",
-                "--fdc", "acorn-1770",
-                "--sideways", f"14:rom:{dfs_1770_rom_filepath}",
+                "--fdc",
+                "acorn-1770",
+                "--sideways",
+                f"14:rom:{dfs_1770_rom_filepath}",
             ],
             startup_timeout=20.0,
         ) as bbc:
@@ -149,9 +148,7 @@ class TestTubeChuckieEggBoot:
     architecture. See docs/discussion/chuckie-egg-2023-tube-hang.md.
     """
 
-    def test_game_starts(
-        self, bbc_tube: Beebium, chuckie_egg_disc_filepath: Path
-    ) -> None:
+    def test_game_starts(self, bbc_tube: Beebium, chuckie_egg_disc_filepath: Path) -> None:
         """Game loads fully and reaches the title screen."""
         bbc_tube.disc.drive(0).insert(chuckie_egg_disc_filepath)
         bbc_tube.keyboard.type("*EXEC !BOOT\r")

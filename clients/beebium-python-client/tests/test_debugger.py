@@ -25,7 +25,6 @@ from beebium.client import Beebium
 from beebium.client.cpu import Registers, StatusRegister
 from beebium.client.debugger import Breakpoint, ExecutionStateEvent, Watchpoint
 from beebium.client.exceptions import DebuggerError, InvalidConditionError
-from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
 
 
 def run_and_wait_for_stop(bbc: Beebium) -> ExecutionStateEvent:
@@ -68,8 +67,8 @@ def plant_and_run_from(bbc: Beebium, code: bytes, org: int = 0x0400) -> None:
 # Execution control
 # ============================================================================
 
-class TestExecutionControl:
 
+class TestExecutionControl:
     def test_stop_and_resume(self, bbc):
         state = bbc.debugger.stop()
         assert not state.is_running
@@ -97,8 +96,8 @@ class TestExecutionControl:
 # Breakpoints -- unconditional
 # ============================================================================
 
-class TestBreakpoints:
 
+class TestBreakpoints:
     def test_add_and_list(self, bbc):
         bp_id = bbc.debugger.add_breakpoint(0x1000)
         assert bp_id.id > 0
@@ -146,11 +145,13 @@ class TestBreakpoints:
         code = bytes([0xA2, 0x00, 0xE8, 0x4C, 0x02, 0x04])
         plant_and_run_from(bbc, code)
         bp_id = bbc.debugger.add_breakpoint(
-            0x0402, condition="hits == 3", stop_counterpart=True,
+            0x0402,
+            condition="hits == 3",
+            stop_counterpart=True,
         )
 
         # Run until the breakpoint fires (3rd hit)
-        event = run_and_wait_for_stop(bbc)
+        run_and_wait_for_stop(bbc)
 
         bps = bbc.debugger.list_breakpoints()
         assert len(bps) == 1
@@ -187,23 +188,33 @@ class TestBreakpoints:
 # Conditional breakpoints
 # ============================================================================
 
-class TestConditionalBreakpoints:
 
+class TestConditionalBreakpoints:
     def test_condition_on_register(self, bbc):
         """Breakpoint fires only when A == 0x42."""
         # LDX #0; .loop: LDA $040B,X; INX; CPX #4; BNE loop; NOP; .table: $10,$42,$99,$FF
-        code = bytes([
-            0xA2, 0x00,             # LDX #0
-            0xBD, 0x0B, 0x04,       # LDA $040B,X
-            0xE8,                   # INX
-            0xE0, 0x04,             # CPX #4
-            0xD0, 0xF8,             # BNE loop (-8 -> $0402)
-            0xEA,                   # NOP
-            0x10, 0x42, 0x99, 0xFF, # table data
-        ])
+        code = bytes(
+            [
+                0xA2,
+                0x00,  # LDX #0
+                0xBD,
+                0x0B,
+                0x04,  # LDA $040B,X
+                0xE8,  # INX
+                0xE0,
+                0x04,  # CPX #4
+                0xD0,
+                0xF8,  # BNE loop (-8 -> $0402)
+                0xEA,  # NOP
+                0x10,
+                0x42,
+                0x99,
+                0xFF,  # table data
+            ]
+        )
         plant_and_run_from(bbc, code)
         bp_id = bbc.debugger.add_breakpoint(0x0402, condition="A == 0x42")
-        event = run_and_wait_for_stop(bbc)
+        run_and_wait_for_stop(bbc)
         assert bbc.cpu.registers.a == 0x42
         bbc.debugger.remove_breakpoint(bp_id)
 
@@ -213,7 +224,7 @@ class TestConditionalBreakpoints:
         code = bytes([0xA2, 0x00, 0xE8, 0x4C, 0x02, 0x04])
         plant_and_run_from(bbc, code)
         bp_id = bbc.debugger.add_breakpoint(0x0402, condition="hits == 3")
-        event = run_and_wait_for_stop(bbc)
+        run_and_wait_for_stop(bbc)
         # Breakpoint fires before the 3rd INX executes; X == 2
         assert bbc.cpu.registers.x == 2
         bbc.debugger.remove_breakpoint(bp_id)
@@ -224,7 +235,7 @@ class TestConditionalBreakpoints:
         code = bytes([0xA2, 0x00, 0xE8, 0x4C, 0x02, 0x04])
         plant_and_run_from(bbc, code)
         bp_id = bbc.debugger.add_breakpoint(0x0402, condition="hits % 5 == 0")
-        event = run_and_wait_for_stop(bbc)
+        run_and_wait_for_stop(bbc)
         # First fire at hits==5, before 5th INX executes; X == 4
         assert bbc.cpu.registers.x == 4
         bbc.debugger.remove_breakpoint(bp_id)
@@ -239,8 +250,8 @@ class TestConditionalBreakpoints:
 # Watchpoints -- unconditional
 # ============================================================================
 
-class TestWatchpoints:
 
+class TestWatchpoints:
     def test_add_and_list(self, bbc):
         wp_id = bbc.debugger.add_watchpoint(0x1000, 0x1010, type="write")
         assert wp_id.id > 0
@@ -296,7 +307,7 @@ class TestWatchpoints:
         code = bytes([0xA9, 0x42, 0x8D, 0x00, 0x05, 0xEA])
         plant_and_run_from(bbc, code)
         wp_id = bbc.debugger.add_watchpoint(0x0500, 0x0501, type="write")
-        event = run_and_wait_for_stop(bbc)
+        run_and_wait_for_stop(bbc)
         assert bbc.memory.address.peek[0x0500] == 0x42
         bbc.debugger.remove_watchpoint(wp_id)
 
@@ -311,7 +322,8 @@ class TestWatchpoints:
         # cycles. The write watchpoint should not fire (only a read occurs).
         cycle_count = bbc.debugger.get_state().cycle_count
         bp_id = bbc.debugger.add_breakpoint(
-            0x0000, end_address=0x10000,
+            0x0000,
+            end_address=0x10000,
             condition=f"cycles >= {cycle_count + 1000}",
         )
         run_and_wait_for_stop(bbc)
@@ -324,22 +336,34 @@ class TestWatchpoints:
 # Conditional watchpoints
 # ============================================================================
 
-class TestConditionalWatchpoints:
 
+class TestConditionalWatchpoints:
     def test_condition_on_register(self, bbc):
         """Watchpoint with condition A == 0x42 skips non-matching writes."""
         # LDA #$10; STA $0500; LDA #$42; STA $0500; LDA #$99; STA $0500; NOP
-        code = bytes([
-            0xA9, 0x10, 0x8D, 0x00, 0x05,  # LDA #$10; STA $0500
-            0xA9, 0x42, 0x8D, 0x00, 0x05,  # LDA #$42; STA $0500
-            0xA9, 0x99, 0x8D, 0x00, 0x05,  # LDA #$99; STA $0500
-            0xEA,                            # NOP
-        ])
-        plant_and_run_from(bbc, code)
-        wp_id = bbc.debugger.add_watchpoint(
-            0x0500, 0x0501, type="write", condition="A == 0x42"
+        code = bytes(
+            [
+                0xA9,
+                0x10,
+                0x8D,
+                0x00,
+                0x05,  # LDA #$10; STA $0500
+                0xA9,
+                0x42,
+                0x8D,
+                0x00,
+                0x05,  # LDA #$42; STA $0500
+                0xA9,
+                0x99,
+                0x8D,
+                0x00,
+                0x05,  # LDA #$99; STA $0500
+                0xEA,  # NOP
+            ]
         )
-        event = run_and_wait_for_stop(bbc)
+        plant_and_run_from(bbc, code)
+        wp_id = bbc.debugger.add_watchpoint(0x0500, 0x0501, type="write", condition="A == 0x42")
+        run_and_wait_for_stop(bbc)
         # Stopped on the second STA when A was 0x42
         assert bbc.memory.address.peek[0x0500] == 0x42
         bbc.debugger.remove_watchpoint(wp_id)
@@ -349,14 +373,13 @@ class TestConditionalWatchpoints:
         # LDA #$42; STA $0500; NOP; NOP
         code = bytes([0xA9, 0x42, 0x8D, 0x00, 0x05, 0xEA, 0xEA])
         plant_and_run_from(bbc, code)
-        bbc.debugger.add_watchpoint(
-            0x0500, 0x0501, type="write", condition="false"
-        )
+        bbc.debugger.add_watchpoint(0x0500, 0x0501, type="write", condition="false")
         # Use a cycle-budget breakpoint to run a deterministic number of
         # cycles instead of relying on wall-clock sleep.
         cycle_count = bbc.debugger.get_state().cycle_count
         bp_id = bbc.debugger.add_breakpoint(
-            0x0000, end_address=0x10000,
+            0x0000,
+            end_address=0x10000,
             condition=f"cycles >= {cycle_count + 1000}",
         )
         run_and_wait_for_stop(bbc)
@@ -367,17 +390,15 @@ class TestConditionalWatchpoints:
     def test_invalid_condition_raises(self, bbc):
         """Invalid condition string raises InvalidConditionError."""
         with pytest.raises(InvalidConditionError):
-            bbc.debugger.add_watchpoint(
-                0x1000, 0x1001, condition="bad syntax !!!"
-            )
+            bbc.debugger.add_watchpoint(0x1000, 0x1001, condition="bad syntax !!!")
 
 
 # ============================================================================
 # Event stream
 # ============================================================================
 
-class TestEventStream:
 
+class TestEventStream:
     def test_stream_delivers_breakpoint_event(self, bbc):
         """Event stream delivers running and stopped events in order."""
         # LDA #$42; NOP
@@ -447,8 +468,8 @@ class TestEventStream:
         # Both received at least running + stopped
         assert len(events1) >= 2
         assert len(events2) >= 2
-        assert events1[-1].state.is_running == False
-        assert events2[-1].state.is_running == False
+        assert not events1[-1].state.is_running
+        assert not events2[-1].state.is_running
 
         bbc.debugger.clear_breakpoints()
 
@@ -466,8 +487,8 @@ class TestEventStream:
 # Full-range breakpoints (cycle budgets, predicates)
 # ============================================================================
 
-class TestFullRangeBreakpoints:
 
+class TestFullRangeBreakpoints:
     def test_cycle_budget_breakpoint(self, bbc):
         """Full-range breakpoint with cycle condition stops after N cycles."""
         bbc.debugger.stop()
@@ -476,7 +497,8 @@ class TestFullRangeBreakpoints:
         # Full-range breakpoint: stop after 1000 cycles
         target = start_cycles + 1000
         bp_id = bbc.debugger.add_breakpoint(
-            0x0000, end_address=0x10000,
+            0x0000,
+            end_address=0x10000,
             condition=f"cycles >= {target}",
         )
 
@@ -493,18 +515,27 @@ class TestFullRangeBreakpoints:
     def test_memory_predicate_breakpoint(self, bbc):
         """Full-range breakpoint with memory condition."""
         # LDA #$00; .loop: CLC; ADC #$01; STA $0500; JMP loop
-        code = bytes([
-            0xA9, 0x00,             # LDA #$00
-            0x18,                   # CLC
-            0x69, 0x01,             # ADC #$01
-            0x8D, 0x00, 0x05,       # STA $0500
-            0x4C, 0x02, 0x04,       # JMP $0402
-        ])
+        code = bytes(
+            [
+                0xA9,
+                0x00,  # LDA #$00
+                0x18,  # CLC
+                0x69,
+                0x01,  # ADC #$01
+                0x8D,
+                0x00,
+                0x05,  # STA $0500
+                0x4C,
+                0x02,
+                0x04,  # JMP $0402
+            ]
+        )
         plant_and_run_from(bbc, code)
 
         # Stop when $0500 reaches $0A
         bp_id = bbc.debugger.add_breakpoint(
-            0x0000, end_address=0x10000,
+            0x0000,
+            end_address=0x10000,
             condition="mem[0x0500] == 0x0A",
         )
 
@@ -519,8 +550,8 @@ class TestFullRangeBreakpoints:
 # Enable/disable breakpoints
 # ============================================================================
 
-class TestEnableDisableBreakpoints:
 
+class TestEnableDisableBreakpoints:
     def test_enable_disable_roundtrip(self, bbc):
         """enable/disable is reflected in list_breakpoints."""
         bp_id = bbc.debugger.add_breakpoint(0x1000)
@@ -536,7 +567,7 @@ class TestEnableDisableBreakpoints:
 
     def test_add_disabled_breakpoint(self, bbc):
         """Breakpoint created with enabled=False starts disabled."""
-        bp_id = bbc.debugger.add_breakpoint(0x1000, enabled=False)
+        bbc.debugger.add_breakpoint(0x1000, enabled=False)
         bps = bbc.debugger.list_breakpoints()
         assert len(bps) == 1
         assert bps[0].enabled is False
@@ -553,9 +584,9 @@ class TestEnableDisableBreakpoints:
         bbc.debugger.disable_breakpoint(bp1_id)
 
         # Add enabled breakpoint at NOP
-        bp2_id = bbc.debugger.add_breakpoint(0x0405)
+        bbc.debugger.add_breakpoint(0x0405)
 
-        event = run_and_wait_for_stop(bbc)
+        run_and_wait_for_stop(bbc)
         # Should have stopped at the NOP, not the STA
         assert bbc.cpu.registers.pc == 0x0405
 
@@ -585,7 +616,7 @@ class TestEnableDisableBreakpoints:
         plant_and_run_from(bbc, code)
         bp_id = bbc.debugger.add_breakpoint(0x0402, condition="hits == 3")
 
-        event = run_and_wait_for_stop(bbc)
+        run_and_wait_for_stop(bbc)
 
         bps = bbc.debugger.list_breakpoints()
         assert bps[0].hit_count == 3
@@ -609,8 +640,8 @@ class TestEnableDisableBreakpoints:
 # Enable/disable watchpoints
 # ============================================================================
 
-class TestEnableDisableWatchpoints:
 
+class TestEnableDisableWatchpoints:
     def test_enable_disable_roundtrip(self, bbc):
         """enable/disable is reflected in list_watchpoints."""
         wp_id = bbc.debugger.add_watchpoint(0x1000, 0x1001, type="write")
@@ -626,7 +657,7 @@ class TestEnableDisableWatchpoints:
 
     def test_add_disabled_watchpoint(self, bbc):
         """Watchpoint created with enabled=False starts disabled."""
-        wp_id = bbc.debugger.add_watchpoint(0x1000, 0x1001, enabled=False)
+        bbc.debugger.add_watchpoint(0x1000, 0x1001, enabled=False)
         wps = bbc.debugger.list_watchpoints()
         assert len(wps) == 1
         assert wps[0].enabled is False
@@ -659,8 +690,8 @@ class TestEnableDisableWatchpoints:
 # CPU state
 # ============================================================================
 
-class TestCpuState:
 
+class TestCpuState:
     def test_get_registers(self, stopped_bbc):
         regs = stopped_bbc.cpu.registers
         assert hasattr(regs, "a")

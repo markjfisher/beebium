@@ -109,30 +109,20 @@ class TestProvenanceDataclass:
 
     def test_provenance_is_frozen(self):
         """Provenance is immutable."""
-        prov = Provenance(
-            type="test", instance_uuid="uuid", version="1.0", timestamp=0
-        )
+        prov = Provenance(type="test", instance_uuid="uuid", version="1.0", timestamp=0)
         with pytest.raises(AttributeError):
             prov.type = "modified"
 
     def test_provenance_equality(self):
         """Two Provenance objects with same values are equal."""
-        prov1 = Provenance(
-            type="test", instance_uuid="uuid", version="1.0", timestamp=100
-        )
-        prov2 = Provenance(
-            type="test", instance_uuid="uuid", version="1.0", timestamp=100
-        )
+        prov1 = Provenance(type="test", instance_uuid="uuid", version="1.0", timestamp=100)
+        prov2 = Provenance(type="test", instance_uuid="uuid", version="1.0", timestamp=100)
         assert prov1 == prov2
 
     def test_provenance_inequality(self):
         """Provenance objects with different values are not equal."""
-        prov1 = Provenance(
-            type="test", instance_uuid="uuid1", version="1.0", timestamp=100
-        )
-        prov2 = Provenance(
-            type="test", instance_uuid="uuid2", version="1.0", timestamp=100
-        )
+        prov1 = Provenance(type="test", instance_uuid="uuid1", version="1.0", timestamp=100)
+        prov2 = Provenance(type="test", instance_uuid="uuid2", version="1.0", timestamp=100)
         assert prov1 != prov2
 
 
@@ -158,27 +148,21 @@ class TestMachineIdentityClass:
     def test_uuid_is_readonly(self, mock_stub):
         """uuid property cannot be assigned."""
         system = System(mock_stub)
-        identity = MachineIdentity(
-            uuid="u", name="n", model_type="t", model_name="m", system=system
-        )
+        identity = MachineIdentity(uuid="u", name="n", model_type="t", model_name="m", system=system)
         with pytest.raises(AttributeError):
             identity.uuid = "new-uuid"
 
     def test_model_type_is_readonly(self, mock_stub):
         """model_type property cannot be assigned."""
         system = System(mock_stub)
-        identity = MachineIdentity(
-            uuid="u", name="n", model_type="t", model_name="m", system=system
-        )
+        identity = MachineIdentity(uuid="u", name="n", model_type="t", model_name="m", system=system)
         with pytest.raises(AttributeError):
             identity.model_type = "new-type"
 
     def test_model_name_is_readonly(self, mock_stub):
         """model_name property cannot be assigned."""
         system = System(mock_stub)
-        identity = MachineIdentity(
-            uuid="u", name="n", model_type="t", model_name="m", system=system
-        )
+        identity = MachineIdentity(uuid="u", name="n", model_type="t", model_name="m", system=system)
         with pytest.raises(AttributeError):
             identity.model_name = "new-name"
 
@@ -186,9 +170,7 @@ class TestMachineIdentityClass:
         """Setting name calls SetMachineName gRPC."""
         mock_stub.SetMachineName.return_value = MockSetMachineNameResponse(name="New Name")
         system = System(mock_stub)
-        identity = MachineIdentity(
-            uuid="u", name="Old", model_type="t", model_name="m", system=system
-        )
+        identity = MachineIdentity(uuid="u", name="Old", model_type="t", model_name="m", system=system)
         identity.name = "New Name"
         mock_stub.SetMachineName.assert_called_once()
         assert identity.name == "New Name"
@@ -196,9 +178,7 @@ class TestMachineIdentityClass:
     def test_repr(self, mock_stub):
         """__repr__ returns informative string."""
         system = System(mock_stub)
-        identity = MachineIdentity(
-            uuid="uuid", name="name", model_type="type", model_name="model", system=system
-        )
+        identity = MachineIdentity(uuid="uuid", name="name", model_type="type", model_name="model", system=system)
         r = repr(identity)
         assert "uuid" in r
         assert "name" in r
@@ -248,9 +228,7 @@ class TestServerStatusEventDataclass:
     def test_server_status_event_with_identity(self, mock_stub):
         """ServerStatusEvent can include identity for IDENTITY_CHANGED events."""
         system = System(mock_stub)
-        identity = MachineIdentity(
-            uuid="u", name="n", model_type="t", model_name="m", system=system
-        )
+        identity = MachineIdentity(uuid="u", name="n", model_type="t", model_name="m", system=system)
         event = ServerStatusEvent(
             status=ServerStatus.IDENTITY_CHANGED,
             message="Identity changed",
@@ -262,9 +240,7 @@ class TestServerStatusEventDataclass:
 
     def test_server_status_event_is_frozen(self):
         """ServerStatusEvent is immutable."""
-        event = ServerStatusEvent(
-            status=ServerStatus.READY, message="Ready", shutdown_grace_ms=0
-        )
+        event = ServerStatusEvent(status=ServerStatus.READY, message="Ready", shutdown_grace_ms=0)
         with pytest.raises(AttributeError):
             event.status = ServerStatus.SHUTTING_DOWN
 
@@ -341,9 +317,7 @@ class TestSystemProvenanceVariations:
         """System handles empty provenance from server."""
         stub = MagicMock()
         stub.GetSystemInfo.return_value = MockSystemInfoResponse(
-            provenance=MockProvenanceResponse(
-                type="", instance_uuid="", version="", timestamp=0
-            )
+            provenance=MockProvenanceResponse(type="", instance_uuid="", version="", timestamp=0)
         )
         system = System(stub)
 
@@ -519,9 +493,7 @@ class TestSystemSpeedMultiplier:
 
     def test_set_speed_multiplier_calls_grpc(self, mock_stub):
         """set_speed_multiplier forwards to SetSpeedMultiplier."""
-        mock_stub.SetSpeedMultiplier.return_value = MockSetSpeedMultiplierResponse(
-            speed_multiplier=0.0
-        )
+        mock_stub.SetSpeedMultiplier.return_value = MockSetSpeedMultiplierResponse(speed_multiplier=0.0)
         system = System(mock_stub)
 
         result = system.set_speed_multiplier(0.0)
@@ -531,9 +503,7 @@ class TestSystemSpeedMultiplier:
 
     def test_set_speed_multiplier_returns_echoed_value(self, mock_stub):
         """set_speed_multiplier returns the server's echoed multiplier."""
-        mock_stub.SetSpeedMultiplier.return_value = MockSetSpeedMultiplierResponse(
-            speed_multiplier=2.0
-        )
+        mock_stub.SetSpeedMultiplier.return_value = MockSetSpeedMultiplierResponse(speed_multiplier=2.0)
         system = System(mock_stub)
 
         result = system.set_speed_multiplier(1.5)

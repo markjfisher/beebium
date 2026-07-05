@@ -27,11 +27,9 @@ import pytest
 
 from beebium.client._proto import extension_ui_pb2
 from beebium.client.extension_ui import (
-    Control,
     ControlKind,
     DispatchResult,
     ExtensionUi,
-    Group,
     IndicatorState,
     View,
 )
@@ -143,9 +141,7 @@ class TestSubscribeView:
 class TestDispatchPayloadDispatch:
     def _stub_with_accept(self) -> MagicMock:
         stub = MagicMock()
-        stub.Dispatch.return_value = extension_ui_pb2.DispatchResponse(
-            accepted=True
-        )
+        stub.Dispatch.return_value = extension_ui_pb2.DispatchResponse(accepted=True)
         return stub
 
     def test_bool_payload_sets_bool_value(self):
@@ -215,15 +211,11 @@ class TestBackgroundSubscription:
     def test_callback_fires_per_view_until_stop(self):
         stub = MagicMock()
         # Two pushes then the stream ends naturally.
-        stub.SubscribeView.return_value = iter(
-            [_make_view_proto(), _make_view_proto()]
-        )
+        stub.SubscribeView.return_value = iter([_make_view_proto(), _make_view_proto()])
         seen: list[View] = []
 
         client = ExtensionUi(stub)
-        handle = client.start_background_subscription(
-            "test", lambda view: seen.append(view)
-        )
+        handle = client.start_background_subscription("test", lambda view: seen.append(view))
 
         # Stream is finite; thread will exit on its own. Wait for it.
         handle.stop(timeout=2.0)

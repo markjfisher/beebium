@@ -20,8 +20,8 @@ import pytest
 
 import beebium.client
 from beebium.client import (
-    Beebium,
     PROTOCOL_FINGERPRINT,
+    Beebium,
     ProtocolMismatchError,
     ServerNotFoundError,
 )

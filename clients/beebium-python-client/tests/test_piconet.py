@@ -19,17 +19,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from beebium.ext.econet.piconet import Piconet, PiconetStatus
-
-
 from beebium.ext.econet.piconet._proto import piconet_service_pb2
 
 
 def _channel_returning(device_path="/dev/tty.usbmodem101", serial_open=True):
     """An ExtensionChannel mock whose invoke() returns serialized status bytes,
     exactly as the real channel carries the dispatcher's reply."""
-    response = piconet_service_pb2.PiconetGetStatusResponse(
-        device_path=device_path, serial_open=serial_open
-    )
+    response = piconet_service_pb2.PiconetGetStatusResponse(device_path=device_path, serial_open=serial_open)
     channel = MagicMock()
     channel.invoke.return_value = response.SerializeToString()
     return channel

@@ -33,9 +33,7 @@ from beebium.client.exceptions import ServerNotFoundError
 from beebium.client.server import ServerProcess
 
 # The crash path is exercised with POSIX signal semantics.
-pytestmark = pytest.mark.skipif(
-    sys.platform.startswith("win"), reason="POSIX signal semantics"
-)
+pytestmark = pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX signal semantics")
 
 
 def _server(mos_filepath, basic_filepath, beebium_server_filepath) -> ServerProcess:
@@ -52,9 +50,7 @@ def _server(mos_filepath, basic_filepath, beebium_server_filepath) -> ServerProc
         pytest.skip(str(e))
 
 
-def test_server_output_is_drained_during_the_session(
-    mos_filepath, basic_filepath, beebium_server_filepath
-):
+def test_server_output_is_drained_during_the_session(mos_filepath, basic_filepath, beebium_server_filepath):
     """The reader threads capture the server's output rather than discarding it."""
     server = _server(mos_filepath, basic_filepath, beebium_server_filepath)
     try:
@@ -66,9 +62,7 @@ def test_server_output_is_drained_during_the_session(
     assert stdout or stderr, "expected the server to have emitted a startup banner"
 
 
-def test_midsession_crash_is_reported_with_its_signal(
-    capsys, mos_filepath, basic_filepath, beebium_server_filepath
-):
+def test_midsession_crash_is_reported_with_its_signal(capsys, mos_filepath, basic_filepath, beebium_server_filepath):
     """A server that dies mid-session is reported, not silently swallowed."""
     server = _server(mos_filepath, basic_filepath, beebium_server_filepath)
     server.start()
@@ -89,9 +83,7 @@ def test_midsession_crash_is_reported_with_its_signal(
     assert "SIGKILL" in report
 
 
-def test_clean_shutdown_is_not_reported_as_a_crash(
-    capsys, mos_filepath, basic_filepath, beebium_server_filepath
-):
+def test_clean_shutdown_is_not_reported_as_a_crash(capsys, mos_filepath, basic_filepath, beebium_server_filepath):
     """A normal stop() must not emit a crash report."""
     server = _server(mos_filepath, basic_filepath, beebium_server_filepath)
     server.start()

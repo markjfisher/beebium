@@ -16,6 +16,7 @@ These exercise the throughput sampling done by the server's emulation loop,
 which a UI speed slider polls via GetPacingStats: the configured multiplier,
 the achieved multiplier, and the estimated maximum attainable multiplier.
 """
+
 from __future__ import annotations
 
 import os
@@ -24,7 +25,6 @@ import time
 import pytest
 
 from beebium.client import Beebium
-
 
 # The server samples throughput once per pacing window; this is a little over
 # one window (~5s wall) so at least one sample is published.

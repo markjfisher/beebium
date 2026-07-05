@@ -22,8 +22,6 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-import pytest
-
 from beebium.client import Beebium
 from beebium.client.system import ServerStatus, ShutdownMode, ShutdownResponse
 

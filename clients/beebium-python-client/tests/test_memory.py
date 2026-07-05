@@ -12,7 +12,7 @@
 
 """Unit tests for the memory access module."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -20,9 +20,7 @@ from beebium.client.memory import (
     AddressSpace,
     BusMemoryAccessor,
     Memory,
-    MemoryReader,
     MemoryRegionInfo,
-    MemoryWriter,
     PCContextAccessor,
     PCContextReader,
     PeekMemoryAccessor,
@@ -386,7 +384,7 @@ class TestAccessorUtilityMethods:
         mock_stub.WriteMemory.assert_called_once()
         call_args = mock_stub.WriteMemory.call_args
         assert call_args[0][0].address == 0x1000
-        assert call_args[0][0].data == b"\xFF\xFF\xFF\xFF"
+        assert call_args[0][0].data == b"\xff\xff\xff\xff"
 
     def test_fill_zero_length(self, memory, mock_stub):
         """fill() with zero length does nothing."""
@@ -538,7 +536,7 @@ class TestPCContextAccess:
 
     def test_pc_context_accessor_single_byte_read(self, memory, mock_stub):
         """PCContextAccessor reads single byte with simulated_pc via ReadMemory."""
-        mock_stub.ReadMemory.return_value = MockResponse(data=b"\xAA")
+        mock_stub.ReadMemory.return_value = MockResponse(data=b"\xaa")
         result = memory.address.bus.with_pc(0xD000)[0x5000]
         assert result == 0xAA
         mock_stub.ReadMemory.assert_called_once()

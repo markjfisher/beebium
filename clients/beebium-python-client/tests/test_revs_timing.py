@@ -33,8 +33,7 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.client.exceptions import ServerNotFoundError
-from beebium.client.screen import screen_contains, read_mode7_screen
-
+from beebium.client.screen import read_mode7_screen, screen_contains
 
 REVS_DISC_FILENAME = "Disc015-Revs.ssd"
 
@@ -107,10 +106,13 @@ def bbc_revs(
             basic_filepath=basic_filepath,
             server_filepath=beebium_server_filepath,
             extra_args=[
-                "--fdc", "acorn-1770",
-                "--sideways", f"14:rom:{dfs_1770_rom_filepath}",
+                "--fdc",
+                "acorn-1770",
+                "--sideways",
+                f"14:rom:{dfs_1770_rom_filepath}",
                 "--auto-boot",
-                "--floppy", f"0:{revs_disc_filepath}",
+                "--floppy",
+                f"0:{revs_disc_filepath}",
             ],
             startup_timeout=20.0,
         ) as bbc:
@@ -179,7 +181,10 @@ class TestRevsTimingDiagnostics:
         vadj = state.vtotal_adj
         total_scanlines = total_rows * scanlines_per_row + vadj
         frame_chars = total_scanlines * chars_per_line
-        print(f"\nExpected frame: {total_rows} rows x {scanlines_per_row} scanlines + {vadj} vadj = {total_scanlines} scanlines")
+        print(
+            f"\nExpected frame: {total_rows} rows x {scanlines_per_row} scanlines "
+            f"+ {vadj} vadj = {total_scanlines} scanlines"
+        )
         print(f"Frame period: {total_scanlines} x {chars_per_line} = {frame_chars} character clocks")
 
     def test_measure_frame_periods(self, bbc_revs: Beebium) -> None:
@@ -216,7 +221,7 @@ class TestRevsTimingDiagnostics:
         frame_start = bbc.debugger.cycle_count
         frame_periods = []
 
-        for frame_num in range(NUM_FRAMES):
+        for _frame_num in range(NUM_FRAMES):
             # Wait for next VSYNC rising edge
             for _ in range(20000):
                 bbc.debugger.step_cycles(STEP_SIZE)
@@ -251,6 +256,6 @@ class TestRevsTimingDiagnostics:
             diff = periods[1] - periods[0]
             avg = sum(frame_periods) / len(frame_periods)
             print(f"Two alternating periods (diff={diff} cycles) -- interlace")
-            print(f"Average period: {avg:.1f} cycles = {avg/2:.1f} char clocks")
+            print(f"Average period: {avg:.1f} cycles = {avg / 2:.1f} char clocks")
         else:
             print(f"WARNING: {len(unique_periods)} different periods -- unstable timing")

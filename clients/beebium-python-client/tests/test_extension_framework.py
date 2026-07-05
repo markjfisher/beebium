@@ -50,19 +50,21 @@ from beebium.ext.peripheral.host_serial import HostSerial
 from beebium.ext.peripheral.rpc_serial import RpcSerial
 
 _PERIPHERAL = {
-    "rpc-serial": RpcSerial, "host-serial": HostSerial,
-    "acorn-rtc": AcornRtc, "acorn-scsi": AcornScsi,
+    "rpc-serial": RpcSerial,
+    "host-serial": HostSerial,
+    "acorn-rtc": AcornRtc,
+    "acorn-scsi": AcornScsi,
 }
 _ECONET = {"aun": Aun, "piconet": Piconet}
-_ALL = (
-    [(PERIPHERAL_ENTRY_POINT_GROUP, n, c) for n, c in _PERIPHERAL.items()]
-    + [(ECONET_ENTRY_POINT_GROUP, n, c) for n, c in _ECONET.items()]
-)
+_ALL = [(PERIPHERAL_ENTRY_POINT_GROUP, n, c) for n, c in _PERIPHERAL.items()] + [
+    (ECONET_ENTRY_POINT_GROUP, n, c) for n, c in _ECONET.items()
+]
 
 
 # --------------------------------------------------------------------------
 # Server-free registry tests
 # --------------------------------------------------------------------------
+
 
 def test_peripheral_group_is_registered():
     assert set(_PERIPHERAL) <= set(installed_adapter_names(PERIPHERAL_ENTRY_POINT_GROUP))
@@ -108,6 +110,7 @@ def test_describe_adapter_reads_the_docstring():
 # resolve_loaded: the shared name-or-id resolver (server-free)
 # --------------------------------------------------------------------------
 
+
 @dataclass
 class _Entry:
     name: str
@@ -146,12 +149,15 @@ def test_resolve_loaded_ambiguous_name_raises_but_id_disambiguates():
 # Integration: peripheral bridge (bbc.extensions) with rpc-serial
 # --------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def bbc_rpc_serial(mos_filepath: Path, basic_filepath, beebium_server_filepath):
     try:
         with Beebium.launch(
-            mos_filepath=mos_filepath, basic_filepath=basic_filepath,
-            server_filepath=beebium_server_filepath, extra_args=["--rpc-serial"],
+            mos_filepath=mos_filepath,
+            basic_filepath=basic_filepath,
+            server_filepath=beebium_server_filepath,
+            extra_args=["--rpc-serial"],
         ) as instance:
             yield instance
     except ServerNotFoundError as e:
@@ -178,8 +184,7 @@ def test_extensions_subscript_by_instance_id(bbc_rpc_serial):
 
 
 def test_extensions_attach_matches_subscript(bbc_rpc_serial):
-    assert RpcSerial.attach(bbc_rpc_serial).extension_id == \
-        bbc_rpc_serial.extensions[RpcSerial].extension_id
+    assert RpcSerial.attach(bbc_rpc_serial).extension_id == bbc_rpc_serial.extensions[RpcSerial].extension_id
 
 
 def test_bound_peripheral_adapter_drives_the_extension(bbc_rpc_serial):
@@ -203,12 +208,15 @@ def test_extensions_get_returns_none_when_unloaded(bbc_rpc_serial):
 # Integration: transport bridge (bbc.transport) with AUN
 # --------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def bbc_aun(mos_filepath: Path, basic_filepath, beebium_server_filepath):
     try:
         with Beebium.launch(
-            mos_filepath=mos_filepath, basic_filepath=basic_filepath,
-            server_filepath=beebium_server_filepath, extra_args=["--aun", "net=1"],
+            mos_filepath=mos_filepath,
+            basic_filepath=basic_filepath,
+            server_filepath=beebium_server_filepath,
+            extra_args=["--aun", "net=1"],
         ) as instance:
             yield instance
     except ServerNotFoundError as e:

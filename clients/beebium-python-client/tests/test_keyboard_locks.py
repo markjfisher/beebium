@@ -17,6 +17,7 @@ the Python API must take account of CAPS LOCK and SHIFT LOCK, otherwise
 ``bbc.keyboard.type("hello")`` produces "HELLO" on screen because the
 default boot state of the BBC Micro is CAPS LOCK on.
 """
+
 from __future__ import annotations
 
 import time
@@ -25,7 +26,6 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.client.screen import screen_contains
-
 
 HOST_CLOCK_HZ = 2_000_000
 
@@ -84,9 +84,7 @@ class TestCapsLockObservedBehaviour:
     CAPS LOCK on.
     """
 
-    def test_lowercase_letters_uppercased_when_caps_lock_on(
-        self, bbc: Beebium
-    ) -> None:
+    def test_lowercase_letters_uppercased_when_caps_lock_on(self, bbc: Beebium) -> None:
         """With CAPS LOCK on (default), typing lowercase letters echoes
         as uppercase on the BASIC input line.
         """

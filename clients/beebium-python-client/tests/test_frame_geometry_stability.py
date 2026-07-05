@@ -19,23 +19,17 @@ caused by the interlace dummy raster producing different frame dimensions.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from beebium.client import Beebium
-from beebium.client.exceptions import ServerNotFoundError
 from beebium.client.screen import screen_contains
 from beebium.client.video import Frame
-
 
 NUM_FRAMES = 10  # Frames to compare for stability
 SETTLE_FRAMES = 5  # Frames to discard while CRTC timing stabilises
 
 
-def _capture_frames_while_running(
-    bbc: Beebium, num_frames: int, settle_frames: int = SETTLE_FRAMES
-) -> list[Frame]:
+def _capture_frames_while_running(bbc: Beebium, num_frames: int, settle_frames: int = SETTLE_FRAMES) -> list[Frame]:
     """Capture frames while the emulator is running, discarding early ones.
 
     The first few frames after streaming starts may have incomplete border
@@ -75,12 +69,8 @@ def _assert_geometry_stable(frames: list[Frame]) -> None:
 
     ref = frames[0]
     for i, frame in enumerate(frames[1:], 1):
-        assert frame.width == ref.width, (
-            f"Frame {i} width {frame.width} != frame 0 width {ref.width}"
-        )
-        assert frame.height == ref.height, (
-            f"Frame {i} height {frame.height} != frame 0 height {ref.height}"
-        )
+        assert frame.width == ref.width, f"Frame {i} width {frame.width} != frame 0 width {ref.width}"
+        assert frame.height == ref.height, f"Frame {i} height {frame.height} != frame 0 height {ref.height}"
         assert frame.display_width == ref.display_width, (
             f"Frame {i} display_width {frame.display_width} != frame 0 {ref.display_width}"
         )
@@ -102,7 +92,7 @@ def _assert_geometry_stable(frames: list[Frame]) -> None:
         assert len(frame.regions) == len(ref.regions), (
             f"Frame {i} has {len(frame.regions)} regions != frame 0 has {len(ref.regions)}"
         )
-        for j, (r_frame, r_ref) in enumerate(zip(frame.regions, ref.regions)):
+        for j, (r_frame, r_ref) in enumerate(zip(frame.regions, ref.regions, strict=False)):
             assert r_frame.start_line == r_ref.start_line, (
                 f"Frame {i} region {j} start_line {r_frame.start_line} != {r_ref.start_line}"
             )
@@ -137,9 +127,7 @@ class TestFrameGeometryStability:
         _assert_geometry_stable(frames)
 
     @pytest.mark.parametrize("mode", [0, 1, 2, 4, 5])
-    def test_bitmap_mode_geometry_stable(
-        self, bbc_mode7: Beebium, mode: int
-    ) -> None:
+    def test_bitmap_mode_geometry_stable(self, bbc_mode7: Beebium, mode: int) -> None:
         """Bitmap modes (R8=0): geometry should be stable after mode switch."""
         bbc = bbc_mode7
         # Switch to the target mode

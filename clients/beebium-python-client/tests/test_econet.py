@@ -244,9 +244,7 @@ class TestWatchStatus:
             [
                 MockGetEconetStatusResponse(enabled=False),
                 MockGetEconetStatusResponse(enabled=True, station_id=42),
-                MockGetEconetStatusResponse(
-                    enabled=True, station_id=42, connected=True
-                ),
+                MockGetEconetStatusResponse(enabled=True, station_id=42, connected=True),
             ]
         )
         statuses = list(econet.watch_status())
@@ -276,9 +274,7 @@ class TestConvenienceProperties:
 
     def test_is_enabled(self, mock_stub, econet):
         """is_enabled reflects status."""
-        mock_stub.GetEconetStatus.return_value = MockGetEconetStatusResponse(
-            enabled=True, station_id=254
-        )
+        mock_stub.GetEconetStatus.return_value = MockGetEconetStatusResponse(enabled=True, station_id=254)
         assert econet.is_enabled is True
 
     def test_is_enabled_when_disabled(self, econet):
@@ -287,9 +283,7 @@ class TestConvenienceProperties:
 
     def test_station_id(self, mock_stub, econet):
         """station_id reflects status."""
-        mock_stub.GetEconetStatus.return_value = MockGetEconetStatusResponse(
-            enabled=True, station_id=42
-        )
+        mock_stub.GetEconetStatus.return_value = MockGetEconetStatusResponse(enabled=True, station_id=42)
         assert econet.station_id == 42
 
     def test_station_id_when_disabled(self, econet):
@@ -302,26 +296,20 @@ class TestEnable:
 
     def test_enable_success(self, mock_stub, econet):
         """enable returns actual AUN port on success."""
-        mock_stub.EnableEconet.return_value = MockEnableEconetResponse(
-            success=True, actual_aun_port=32768
-        )
+        mock_stub.EnableEconet.return_value = MockEnableEconetResponse(success=True, actual_aun_port=32768)
         port = econet.enable(station_id=254)
         assert port == 32768
         mock_stub.EnableEconet.assert_called_once()
 
     def test_enable_failure_raises(self, mock_stub, econet):
         """enable raises EconetError on failure."""
-        mock_stub.EnableEconet.return_value = MockEnableEconetResponse(
-            success=False, error="Station ID out of range"
-        )
+        mock_stub.EnableEconet.return_value = MockEnableEconetResponse(success=False, error="Station ID out of range")
         with pytest.raises(EconetError, match="Station ID out of range"):
             econet.enable(station_id=0)
 
     def test_enable_no_network(self, mock_stub, econet):
         """enable passes no_network kwarg to stub."""
-        mock_stub.EnableEconet.return_value = MockEnableEconetResponse(
-            success=True, actual_aun_port=0
-        )
+        mock_stub.EnableEconet.return_value = MockEnableEconetResponse(success=True, actual_aun_port=0)
         econet.enable(station_id=254, no_network=True)
         call_args = mock_stub.EnableEconet.call_args
         request = call_args[0][0]
@@ -330,9 +318,7 @@ class TestEnable:
 
     def test_enable_custom_port(self, mock_stub, econet):
         """enable passes custom aun_port to stub."""
-        mock_stub.EnableEconet.return_value = MockEnableEconetResponse(
-            success=True, actual_aun_port=9999
-        )
+        mock_stub.EnableEconet.return_value = MockEnableEconetResponse(success=True, actual_aun_port=9999)
         port = econet.enable(station_id=100, aun_port=9999)
         assert port == 9999
         call_args = mock_stub.EnableEconet.call_args
@@ -351,9 +337,7 @@ class TestDisable:
 
     def test_disable_failure_raises(self, mock_stub, econet):
         """disable raises EconetError on failure."""
-        mock_stub.DisableEconet.return_value = MockDisableEconetResponse(
-            success=False, error="Econet not enabled"
-        )
+        mock_stub.DisableEconet.return_value = MockDisableEconetResponse(success=False, error="Econet not enabled")
         with pytest.raises(EconetError, match="Econet not enabled"):
             econet.disable()
 
@@ -368,9 +352,7 @@ class TestSetStationId:
 
     def test_set_station_id_failure_raises(self, mock_stub, econet):
         """set_station_id raises EconetError on failure."""
-        mock_stub.SetStationId.return_value = MockSetStationIdResponse(
-            success=False, error="Econet is not enabled"
-        )
+        mock_stub.SetStationId.return_value = MockSetStationIdResponse(success=False, error="Econet is not enabled")
         with pytest.raises(EconetError, match="Econet is not enabled"):
             econet.set_station_id(42)
 
@@ -401,13 +383,21 @@ class TestDataclasses:
     def test_adlc_status_is_frozen(self):
         """AdlcStatus is immutable."""
         adlc = AdlcStatus(
-            cr1=0, cr2=0, cr3=0, cr4=0,
-            sr1=0, sr2=0,
+            cr1=0,
+            cr2=0,
+            cr3=0,
+            cr4=0,
+            sr1=0,
+            sr2=0,
             irq_output=False,
-            tx_fifo_empty=True, tx_fifo_full=False,
-            rx_fifo_empty=True, rx_fifo_full=False,
-            tx_frame_field="idle", rx_frame_field="idle",
-            pse_level=0, cts_input=False,
+            tx_fifo_empty=True,
+            tx_fifo_full=False,
+            rx_fifo_empty=True,
+            rx_fifo_full=False,
+            tx_frame_field="idle",
+            rx_frame_field="idle",
+            pse_level=0,
+            cts_input=False,
         )
         with pytest.raises(AttributeError):
             adlc.cr1 = 1
@@ -417,4 +407,3 @@ class TestDataclasses:
         hs = HandshakeStatus(stage="idle", flag_fill_active=False)
         with pytest.raises(AttributeError):
             hs.stage = "scout"
-

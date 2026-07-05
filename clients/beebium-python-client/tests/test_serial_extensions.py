@@ -30,9 +30,7 @@ from beebium.ext.peripheral.host_serial import HostSerial
 from beebium.ext.peripheral.rpc_serial import RpcSerial
 
 # host-serial pty/device modes rely on POSIX pseudo-terminals.
-_posix_only = pytest.mark.skipif(
-    sys.platform.startswith("win"), reason="host-serial pty/device is POSIX-only"
-)
+_posix_only = pytest.mark.skipif(sys.platform.startswith("win"), reason="host-serial pty/device is POSIX-only")
 
 # MC6850 control: /16 divide, 8N1, /RTS low, no TX IRQ -- the MOS serial config.
 _ACIA_8N1 = 0x15

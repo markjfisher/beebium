@@ -16,16 +16,15 @@ Tests that the cycle-paced typing mechanism works reliably via the
 TypeAheadQueue. All tests use emulator cycle counts for timing, never
 wall-clock sleeps.
 """
+
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 import pytest
 
 from beebium.client import Beebium
-from beebium.client.screen import screen_contains, read_mode7_screen
-
+from beebium.client.screen import screen_contains
 
 # BBC Micro host clock: 2 MHz
 HOST_CLOCK_HZ = 2_000_000

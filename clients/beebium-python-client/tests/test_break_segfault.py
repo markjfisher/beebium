@@ -30,8 +30,7 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.client.exceptions import BeebiumError, ServerNotFoundError
-from beebium.client.screen import dump_screen, screen_contains, read_mode7_screen
-
+from beebium.client.screen import dump_screen, read_mode7_screen, screen_contains
 
 _skip_windows_ci = pytest.mark.skipif(
     sys.platform == "win32" and os.environ.get("CI") == "true",
@@ -88,10 +87,7 @@ def _diagnostics(bbc: Beebium, attempt: int) -> str:
     # Server still alive but the test predicate failed -- collect state.
     try:
         regs = bbc.cpu.registers
-        parts.append(
-            f"Host CPU: PC=${regs.pc:04X} A=${regs.a:02X} X=${regs.x:02X} "
-            f"Y=${regs.y:02X} SP=${regs.sp:02X}"
-        )
+        parts.append(f"Host CPU: PC=${regs.pc:04X} A=${regs.a:02X} X=${regs.x:02X} Y=${regs.y:02X} SP=${regs.sp:02X}")
     except (BeebiumError, grpc.RpcError) as e:
         parts.append(f"Host CPU: error {e!r}")
     try:
@@ -127,10 +123,7 @@ def _stress_break_cycles(
         try:
             _press_break(bbc)
         except (BeebiumError, grpc.RpcError) as e:
-            pytest.fail(
-                f"Break RPC failed on attempt {attempt}: {e!r}\n"
-                + _diagnostics(bbc, attempt)
-            )
+            pytest.fail(f"Break RPC failed on attempt {attempt}: {e!r}\n" + _diagnostics(bbc, attempt))
 
         # Give the machine emulated time to complete reset and redraw banner.
         try:
@@ -139,10 +132,7 @@ def _stress_break_cycles(
                 emulated_seconds=settle_seconds,
             )
         except (BeebiumError, grpc.RpcError) as e:
-            pytest.fail(
-                f"RPC failure waiting for banner on attempt {attempt}: {e!r}\n"
-                + _diagnostics(bbc, attempt)
-            )
+            pytest.fail(f"RPC failure waiting for banner on attempt {attempt}: {e!r}\n" + _diagnostics(bbc, attempt))
 
         if not ok:
             pytest.fail(
@@ -162,6 +152,7 @@ def _stress_break_cycles(
 # =============================================================================
 # Issue #27: no Tube
 # =============================================================================
+
 
 @pytest.fixture
 def bbc_romram(
@@ -208,6 +199,7 @@ class TestBreakSegfaultNoTube:
 # Issue #39: with Tube
 # =============================================================================
 
+
 @pytest.fixture
 def bbc_anfs_tube(
     beebium_roms_dirpath: Path,
@@ -229,7 +221,8 @@ def bbc_anfs_tube(
             basic_filepath=basic_filepath,
             server_filepath=server_filepath,
             extra_args=[
-                "--sideways", f"9:rom:{anfs_filepath}",
+                "--sideways",
+                f"9:rom:{anfs_filepath}",
                 "--tube-65c02",
             ],
             startup_timeout=20.0,

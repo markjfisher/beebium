@@ -53,17 +53,14 @@ def test_status_stream_emits_periodic_heartbeat(bbc):
     # we would see exactly one event. A heartbeat every few seconds yields
     # several. Require enough to prove periodicity, not a one-off.
     assert len(events) >= 3, (
-        f"expected periodic heartbeats over {window:.0f}s, got {len(events)} "
-        f"event(s): {[s for _, s in events]}"
+        f"expected periodic heartbeats over {window:.0f}s, got {len(events)} event(s): {[s for _, s in events]}"
     )
 
     # And prove they are spread out (a genuine cadence), not a startup burst.
     stamps = [t for t, _ in events]
-    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    gaps = [b - a for a, b in zip(stamps, stamps[1:], strict=False)]
     assert max(gaps) <= 5.0, f"heartbeat gap too large: gaps={gaps}"
 
     # The periodic ticks are heartbeats specifically (not, say, repeated READY).
     statuses = [s for _, s in events]
-    assert statuses.count(ServerStatus.HEARTBEAT) >= 2, (
-        f"expected HEARTBEAT ticks, got {statuses}"
-    )
+    assert statuses.count(ServerStatus.HEARTBEAT) >= 2, f"expected HEARTBEAT ticks, got {statuses}"

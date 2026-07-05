@@ -15,6 +15,7 @@
 Provides coupled stepping, diagnostic dump functions, and constants
 used by multiple Tube game test suites (Elite, Chuckie Egg 2023, etc.).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,8 +25,7 @@ import grpc
 from beebium.client import Beebium
 from beebium.client.disassemble import disassemble
 from beebium.client.exceptions import BeebiumError
-from beebium.client.screen import dump_screen, screen_contains
-
+from beebium.client.screen import dump_screen
 
 # DFS ROM for the Acorn 1770 disc controller.
 # DNFS ROMs contain an 8271-only DFS and are NOT compatible with the 1770.
@@ -43,8 +43,7 @@ def find_dfs_1770_rom(roms_dirpath: Path) -> Path | None:
     return None
 
 
-def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
-                         chunk_seconds: float = 1.0):
+def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float, chunk_seconds: float = 1.0):
     """Run the emulator until predicate() returns True or a cycle budget expires.
 
     In the single-threaded Tube model, running the host automatically
@@ -61,8 +60,7 @@ def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
     Returns:
         True if the predicate was satisfied, False on timeout.
     """
-    return bbc.run_until_or_timeout(
-        predicate, emulated_seconds, chunk_seconds=chunk_seconds)
+    return bbc.run_until_or_timeout(predicate, emulated_seconds, chunk_seconds=chunk_seconds)
 
 
 def disassemble_region(memory, start: int, length: int) -> list[str]:
@@ -132,11 +130,13 @@ def dump_diagnostics(bbc: Beebium) -> None:
     # Tube status
     try:
         tube_status = bbc.tube.status
-        print(f"Tube: enabled={tube_status.enabled}, "
-              f"connected={tube_status.parasite_connected}, "
-              f"type={tube_status.parasite_type}, "
-              f"clock={tube_status.parasite_clock_hz}Hz, "
-              f"parasite_addr={tube_status.parasite_grpc_address}")
+        print(
+            f"Tube: enabled={tube_status.enabled}, "
+            f"connected={tube_status.parasite_connected}, "
+            f"type={tube_status.parasite_type}, "
+            f"clock={tube_status.parasite_clock_hz}Hz, "
+            f"parasite_addr={tube_status.parasite_grpc_address}"
+        )
     except (BeebiumError, grpc.RpcError) as e:
         print(f"Tube: error reading - {e}")
 
@@ -152,10 +152,12 @@ def dump_diagnostics(bbc: Beebium) -> None:
         disc_status = bbc.disc.status
         print(f"Disc controller: {disc_status.controller_type}")
         for drive in disc_status.drives:
-            print(f"  Drive {drive.drive}: state={drive.state.value}, "
-                  f"motor={'on' if drive.motor_on else 'off'}, "
-                  f"track={drive.current_track}, "
-                  f"disc={drive.disc_name}")
+            print(
+                f"  Drive {drive.drive}: state={drive.state.value}, "
+                f"motor={'on' if drive.motor_on else 'off'}, "
+                f"track={drive.current_track}, "
+                f"disc={drive.disc_name}"
+            )
     except (BeebiumError, grpc.RpcError) as e:
         print(f"Disc: error reading - {e}")
 
@@ -195,14 +197,14 @@ def dump_diagnostics(bbc: Beebium) -> None:
             stack = bbc.memory.address.peek.read(0x0100, 256)
             stack_top = sp + 1
             if stack_top < 256:
-                stack_bytes = stack[stack_top:min(stack_top + 32, 256)]
+                stack_bytes = stack[stack_top : min(stack_top + 32, 256)]
                 hex_str = " ".join(f"{b:02X}" for b in stack_bytes)
                 print(f"Host stack (${0x100 + stack_top:04X}+): {hex_str}")
                 # Decode return addresses
                 i = 0
                 while i + 1 < len(stack_bytes):
-                    addr = stack_bytes[i] | (stack_bytes[i+1] << 8)
-                    print(f"  Stack ${0x100 + stack_top + i:04X}: ${addr:04X} (return to ${addr+1:04X}?)")
+                    addr = stack_bytes[i] | (stack_bytes[i + 1] << 8)
+                    print(f"  Stack ${0x100 + stack_top + i:04X}: ${addr:04X} (return to ${addr + 1:04X}?)")
                     i += 2
         except (BeebiumError, grpc.RpcError) as e:
             print(f"Host stack: error reading - {e}")
@@ -234,8 +236,7 @@ def dump_parasite_diagnostics(parasite: Beebium) -> None:
 
     try:
         p_state = parasite.debugger.get_state()
-        print(f"Parasite execution: running={p_state.is_running}, "
-              f"cycles={p_state.cycle_count}")
+        print(f"Parasite execution: running={p_state.is_running}, cycles={p_state.cycle_count}")
     except (BeebiumError, grpc.RpcError) as e:
         print(f"Parasite execution: error reading - {e}")
 
@@ -263,14 +264,11 @@ def dump_parasite_diagnostics(parasite: Beebium) -> None:
         pr3d = parasite.memory.address.peek[0xFEFD]
         pr4s = parasite.memory.address.peek[0xFEFE]
         pr4d = parasite.memory.address.peek[0xFEFF]
-        print(f"Parasite Tube regs (parasite view):")
-        print(f"  R1: status=${pr1s:02X} data=${pr1d:02X}  "
-              f"[b7={'DATA' if pr1s & 0x80 else 'empty'}]")
+        print("Parasite Tube regs (parasite view):")
+        print(f"  R1: status=${pr1s:02X} data=${pr1d:02X}  [b7={'DATA' if pr1s & 0x80 else 'empty'}]")
         print(f"  R2: status=${pr2s:02X} data=${pr2d:02X}")
-        print(f"  R3: status=${pr3s:02X} data=${pr3d:02X}  "
-              f"[b7={'DATA' if pr3s & 0x80 else 'empty'}]")
-        print(f"  R4: status=${pr4s:02X} data=${pr4d:02X}  "
-              f"[b7={'DATA' if pr4s & 0x80 else 'empty'}]")
+        print(f"  R3: status=${pr3s:02X} data=${pr3d:02X}  [b7={'DATA' if pr3s & 0x80 else 'empty'}]")
+        print(f"  R4: status=${pr4s:02X} data=${pr4d:02X}  [b7={'DATA' if pr4s & 0x80 else 'empty'}]")
     except (BeebiumError, grpc.RpcError) as e:
         print(f"Parasite Tube regs: error reading - {e}")
 
@@ -310,10 +308,8 @@ def dump_parasite_diagnostics(parasite: Beebium) -> None:
         nmi_addr = nmi_vec[0] | (nmi_vec[1] << 8)
         irq_vec = parasite.memory.address.peek.read(0xFFFE, 2)
         irq_addr = irq_vec[0] | (irq_vec[1] << 8)
-        print(f"Parasite vectors: NMIV=$0200={nmiv_addr:04X}, "
-              f"IRQ1V=$0202={irqv_addr:04X}")
-        print(f"Parasite HW vectors: NMI=$FFFA={nmi_addr:04X}, "
-              f"IRQ=$FFFE={irq_addr:04X}")
+        print(f"Parasite vectors: NMIV=$0200={nmiv_addr:04X}, IRQ1V=$0202={irqv_addr:04X}")
+        print(f"Parasite HW vectors: NMI=$FFFA={nmi_addr:04X}, IRQ=$FFFE={irq_addr:04X}")
     except (BeebiumError, grpc.RpcError) as e:
         print(f"Parasite vectors: error reading - {e}")
 
@@ -323,7 +319,7 @@ def dump_parasite_diagnostics(parasite: Beebium) -> None:
         sp = p_regs.sp if parasite_pc is not None else 0xFF
         stack_top = sp + 1
         if stack_top < 256:
-            stack_bytes = stack[stack_top:min(stack_top + 16, 256)]
+            stack_bytes = stack[stack_top : min(stack_top + 16, 256)]
             hex_str = " ".join(f"{b:02X}" for b in stack_bytes)
             print(f"Parasite stack (${0x100 + stack_top:04X}+): {hex_str}")
     except (BeebiumError, grpc.RpcError) as e:

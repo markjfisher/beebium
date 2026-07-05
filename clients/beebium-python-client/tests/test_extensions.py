@@ -24,8 +24,8 @@ from pathlib import Path
 import pytest
 
 from beebium.client import Beebium
-from beebium.client.exceptions import ServerNotFoundError
 from beebium.client._proto import peripheral_extension_pb2 as pe_pb2
+from beebium.client.exceptions import ServerNotFoundError
 from beebium.client.extensions import (
     ExtensionInfo,
     ParameterSchemaInfo,
@@ -61,6 +61,7 @@ def bbc_with_rpc_serial(
 # --------------------------------------------------------------------------
 # Server-free conversion tests
 # --------------------------------------------------------------------------
+
 
 def test_extension_info_from_proto_maps_all_scalar_fields():
     proto = pe_pb2.ExtensionInfo(
@@ -142,13 +143,14 @@ def test_extension_info_from_proto_maps_storage_devices():
 def test_extension_info_dataclass_is_frozen():
     proto = pe_pb2.ExtensionInfo(name="rpc-serial", id="rpc-serial")
     info = _extension_info_from_proto(proto)
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):  # frozen dataclass -> FrozenInstanceError
         info.name = "changed"  # type: ignore[misc]
 
 
 # --------------------------------------------------------------------------
 # Integration tests (launch a real server with an extension loaded)
 # --------------------------------------------------------------------------
+
 
 def test_loaded_reports_a_launched_extension(bbc_with_rpc_serial):
     loaded = bbc_with_rpc_serial.extensions.loaded
