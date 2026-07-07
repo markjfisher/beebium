@@ -119,8 +119,10 @@ oracle/public
 
 disassembly/*
 !disassembly/*.py
-# Local machine-specific development notes
+# Local machine-specific development notes and configuration (sensitive)
 docs/local-*.md
+local-*
+**/local-*
 
 # Local packaging build outputs (Linux bundle tarballs)
 _artifacts/

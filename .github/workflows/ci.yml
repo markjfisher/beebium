@@ -46,6 +46,13 @@ jobs:
     env:
       VCPKG_DEFAULT_TRIPLET: arm64-osx-static
       VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/triplets
+      # Per-platform build parallelism. The GitHub-hosted macOS arm64 runner is
+      # RAM-starved for a static gRPC/protobuf build: several concurrent C++
+      # translation units (and the final static links) push it into swap, which
+      # is slower overall than serialising. Build one target at a time here.
+      # CMAKE_BUILD_PARALLEL_LEVEL is CMake's native parallelism knob; the build
+      # step passes it explicitly to --parallel so the value is unambiguous.
+      CMAKE_BUILD_PARALLEL_LEVEL: "1"
 
     steps:
       - name: Checkout
@@ -107,7 +114,7 @@ jobs:
           exit 1
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel "${CMAKE_BUILD_PARALLEL_LEVEL}"
 
       - name: Verify static linking
         run: |
@@ -277,6 +284,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: preflight
 
+    env:
+      # Per-platform build parallelism (see the macOS arm64 job). The hosted
+      # ubuntu-latest runner has plenty of cores but a modest RAM ceiling for a
+      # gRPC/protobuf C++ build, so cap at 2 concurrent compiles.
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -311,7 +324,7 @@ jobs:
           exit 1
 
       - name: Build
-        run: cmake --build build --parallel 2
+        run: cmake --build build --parallel "${CMAKE_BUILD_PARALLEL_LEVEL}"
 
       - name: Start Avahi daemon (Linux mDNS advertiser tests)
         # The Linux advertiser test needs a running avahi-daemon (with a D-Bus
@@ -371,6 +384,91 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: beebium-server-linux
+          path: |
+            build/src/server/beebium-model-b
+            build/src/server/extensions/
+            build/lib/libbeebium_extension_api.so
+            build/lib/libbeebium_extension_ui_proto.so
+          retention-days: 7
+
+  server-linux-arm64:
+    name: Build and Test Server (Linux arm64)
+    # Self-hosted arm64 runner (a Raspberry Pi 4, "trejon"; see
+    # docs/local-trejon.md). GitHub does not offer hosted arm64 Linux runners,
+    # so this native aarch64 coverage comes from our own box.
+    runs-on: [self-hosted, Linux, ARM64]
+    needs: preflight
+    # The Pi is RAM-limited and builds serially (see CMAKE_BUILD_PARALLEL_LEVEL
+    # below), so a from-scratch build is slow; bound it generously.
+    timeout-minutes: 180
+
+    env:
+      # Per-platform build parallelism (see the macOS arm64 job). The Pi has
+      # ~1.8 GiB RAM; more than one concurrent gRPC/protobuf compile pushes it
+      # into swap and is slower overall than serialising. Build one at a time.
+      CMAKE_BUILD_PARALLEL_LEVEL: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Build/test dependencies (cmake, gRPC/protobuf, Avahi, ...) are
+      # pre-provisioned on the runner host rather than installed per run: this
+      # is a persistent self-hosted box, so re-installing every build would be
+      # wasteful and would require passwordless sudo in the job. See
+      # docs/local-trejon.md for the provisioning steps.
+      - name: Show toolchain
+        run: |
+          cmake --version
+          gcc --version | head -1
+          pkg-config --exists grpc++ && echo "grpc++: $(pkg-config --modversion grpc++)"
+
+      # Retry configure: FetchContent pulls Catch2 and nlohmann_json from
+      # GitHub at configure time, which intermittently 504s. Clean the build
+      # tree and retry rather than failing the whole run on a transient blip.
+      - name: Configure CMake
+        run: |
+          for attempt in 1 2 3; do
+            if cmake -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DBEEBIUM_BUILD_TESTS=ON \
+                -DBEEBIUM_BUILD_SERVICE=ON \
+                -DBEEBIUM_BUILD_SERVER=ON; then
+              exit 0
+            fi
+            echo "::warning::CMake configure failed (attempt ${attempt}/3); retrying in case the cause was transient (e.g. a FetchContent download). A deterministic failure will surface after the final attempt."
+            rm -rf build
+            sleep $((attempt * 20))
+          done
+          echo "::error::CMake configure failed after 3 attempts"
+          exit 1
+
+      - name: Build
+        run: cmake --build build --parallel "${CMAKE_BUILD_PARALLEL_LEVEL}"
+
+      - name: Run tests
+        env:
+          # Require both the Avahi advertise AND browse paths to actually run:
+          # validating the real aarch64 Pi round trip is a stated goal (the
+          # hosted x86 Linux job already requires it). avahi-daemon runs as a
+          # system service on the Pi, so no per-job daemon bring-up is needed.
+          BEEBIUM_REQUIRE_MDNS: "1"
+          BEEBIUM_REQUIRE_MDNS_BROWSE: "1"
+        # See the other jobs for the rationale behind --timeout 120 and
+        # --repeat until-pass:2.
+        run: |
+          ctest --test-dir build --output-on-failure --timeout 120 --repeat until-pass:2 2>&1 | tee ctest.log
+          if grep -qE '\*\*\*(Failed|Timeout|Exception)' ctest.log; then
+            echo "::warning::A test failed on its first attempt and passed on rerun (flaky). See the ctest output above and root-cause it; do not rely on the retry."
+          fi
+
+      - name: Upload server binaries
+        # Preserve the built binaries even if a step failed, so a re-run of a
+        # dependent job can reuse them instead of forcing a full rebuild.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beebium-server-linux-arm64
           path: |
             build/src/server/beebium-model-b
             build/src/server/extensions/
