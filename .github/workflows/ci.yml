@@ -404,9 +404,11 @@ jobs:
 
     env:
       # Per-platform build parallelism (see the macOS arm64 job). The Pi has
-      # ~1.8 GiB RAM; more than one concurrent gRPC/protobuf compile pushes it
-      # into swap and is slower overall than serialising. Build one at a time.
-      CMAKE_BUILD_PARALLEL_LEVEL: "1"
+      # ~1.8 GiB RAM. A single-core build is safe but slow (~2h30m); trying 2
+      # cores to see whether there is enough memory headroom to roughly halve
+      # it without the heavy gRPC/protobuf compiles pushing it into swap. Drop
+      # back to 1 if this run OOMs or thrashes.
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
 
     steps:
       - name: Checkout
