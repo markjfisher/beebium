@@ -393,9 +393,9 @@ jobs:
 
   server-linux-arm64:
     name: Build and Test Server (Linux arm64)
-    # Self-hosted arm64 runner (a Raspberry Pi 4, "trejon"; see
-    # docs/local-trejon.md). GitHub does not offer hosted arm64 Linux runners,
-    # so this native aarch64 coverage comes from our own box.
+    # Self-hosted arm64 Linux runner (see docs/local-arm64-runner.md, which is
+    # gitignored). GitHub does not offer hosted arm64 Linux runners, so this
+    # native aarch64 coverage comes from our own box.
     runs-on: [self-hosted, Linux, ARM64]
     needs: preflight
     # The Pi is RAM-limited and builds serially (see CMAKE_BUILD_PARALLEL_LEVEL
@@ -416,7 +416,7 @@ jobs:
       # pre-provisioned on the runner host rather than installed per run: this
       # is a persistent self-hosted box, so re-installing every build would be
       # wasteful and would require passwordless sudo in the job. See
-      # docs/local-trejon.md for the provisioning steps.
+      # docs/local-arm64-runner.md for the provisioning steps.
       - name: Show toolchain
         run: |
           cmake --version
