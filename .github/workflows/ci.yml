@@ -404,13 +404,16 @@ jobs:
 
     env:
       # Per-platform build parallelism (see the macOS arm64 job). Must stay at
-      # 1 on this runner: the Pi has ~1.8 GiB RAM (+1.8 GiB swap) and the server
-      # main_*.cpp translation units each peak at ~1.5 GiB in cc1plus (they
-      # instantiate every Machine<> variant via ServerMain.hpp). Two in
-      # parallel exhausted both RAM and swap and the kernel OOM-killed cc1plus
-      # (measured 2026-07-07: avail dropped to 41 MiB, swap to 1829/1842 MiB).
-      # A single-core build is slow (~2h30m) but fits. Revisit only if the
-      # per-TU peak is reduced or the box gets more RAM.
+      # 1 on this runner: the Pi has ~1.8 GiB RAM (+1.8 GiB swap) and each of
+      # the four server main_*.cpp TUs peaks at ~1.5 GiB in cc1plus. The whole
+      # server (every gRPC service, subcommand and the extension framework)
+      # lives in the header-only, machine-templated server_main<> in
+      # ServerMain.hpp, so it is compiled in full once per machine variant.
+      # Two of those TUs in parallel exhausted both RAM and swap and the kernel
+      # OOM-killed cc1plus (measured 2026-07-07: avail dropped to 41 MiB, swap
+      # to 1829/1842 MiB). A single-core build is slow (~2h30m) but fits.
+      # Revisit if the per-TU peak drops (e.g. type-erasing the machine so the
+      # server body compiles once) or the box gets more RAM.
       CMAKE_BUILD_PARALLEL_LEVEL: "1"
 
     steps:
