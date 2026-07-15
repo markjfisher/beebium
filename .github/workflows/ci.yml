@@ -398,23 +398,21 @@ jobs:
     # native aarch64 coverage comes from our own box.
     runs-on: [self-hosted, Linux, ARM64]
     needs: preflight
-    # The Pi is RAM-limited and builds serially (see CMAKE_BUILD_PARALLEL_LEVEL
-    # below), so a from-scratch build is slow; bound it generously.
+    # A from-scratch build on the Pi still takes a while even at -j4 (see
+    # CMAKE_BUILD_PARALLEL_LEVEL below); bound it generously.
     timeout-minutes: 180
 
     env:
-      # Per-platform build parallelism (see the macOS arm64 job). Must stay at
-      # 1 on this runner: the Pi has ~1.8 GiB RAM (+1.8 GiB swap) and each of
-      # the four server main_*.cpp TUs peaks at ~1.5 GiB in cc1plus. The whole
-      # server (every gRPC service, subcommand and the extension framework)
-      # lives in the header-only, machine-templated server_main<> in
-      # ServerMain.hpp, so it is compiled in full once per machine variant.
-      # Two of those TUs in parallel exhausted both RAM and swap and the kernel
-      # OOM-killed cc1plus (measured 2026-07-07: avail dropped to 41 MiB, swap
-      # to 1829/1842 MiB). A single-core build is slow (~2h30m) but fits.
-      # Revisit if the per-TU peak drops (e.g. type-erasing the machine so the
-      # server body compiles once) or the box gets more RAM.
-      CMAKE_BUILD_PARALLEL_LEVEL: "1"
+      # Per-platform build parallelism (see the macOS arm64 job). The runner is
+      # a 4-core Raspberry Pi 5 with ~8 GiB RAM. Each of the four server
+      # main_*.cpp TUs peaks at ~1.5 GiB in cc1plus -- the whole server (every
+      # gRPC service, subcommand and the extension framework) lives in the
+      # header-only, machine-templated server_main<> in ServerMain.hpp, so it
+      # is compiled in full once per machine variant. Four in parallel peak
+      # around 6 GiB, which fits, so use all four cores. (History: the previous
+      # 2 GiB Pi 4 could only manage -j1 -- even two of those TUs exhausted RAM
+      # + swap and the kernel OOM-killed cc1plus.)
+      CMAKE_BUILD_PARALLEL_LEVEL: "4"
 
     steps:
       - name: Checkout
