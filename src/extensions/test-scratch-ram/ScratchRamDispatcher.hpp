@@ -47,8 +47,7 @@ public:
             }
             ScratchRamReadResponse resp;
             resp.set_value(ram_.peek(static_cast<std::uint16_t>(req.offset())));
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         if (method == "Write") {
             ScratchRamWriteRequest req;
@@ -64,8 +63,7 @@ public:
             ram_.poke(static_cast<std::uint16_t>(req.offset()),
                       static_cast<std::uint8_t>(req.value()));
             ScratchRamWriteResponse resp;
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         if (method == "ReadAll") {
             std::string data(8, '\0');
@@ -74,8 +72,7 @@ public:
             }
             ScratchRamReadAllResponse resp;
             resp.set_data(std::move(data));
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         return RpcStatus::error(
             kRpcUnimplemented,

@@ -236,7 +236,6 @@ TEST_CASE("Provider registered under qualified name by registry", "[extension][i
 
     auto ext = TestScratchRam::create();
     ext->set_config({{"id", "my-scratch"}});
-    auto* raw = ext.get();
     registry.register_extension(std::move(ext));
 
     ExtensionContext ctx(&port);

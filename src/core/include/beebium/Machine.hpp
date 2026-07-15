@@ -220,7 +220,7 @@ public:
                             auto* ula = state_.memory.tube_socket.tube_ula();
                             uint16_t pc = state_.memory.tube_socket.diag_parasite_pc();
                             fprintf(stderr, "[STRETCH-INFO+%llu] tube_ula offset=%u (write stretch), parasite_pc=0x%04X\n",
-                                    since,
+                                    static_cast<unsigned long long>(since),
                                     ula ? ula->pending_offset() : 99,
                                     pc);
                         }
@@ -366,7 +366,7 @@ public:
                 if (ticks_since == 0 || ticks_since == 1000 || ticks_since == 10000 ||
                     ticks_since == 100000 || ticks_since == 500000) {
                     fprintf(stderr, "[DUMP tick+%llu] nmi_pending=%d, ff=%d, irq=%d, dev_nmi=0x%02X, nmi_flags=0x%02X, in_nmi=%d\n",
-                            ticks_since, econet_nmi,
+                            static_cast<unsigned long long>(ticks_since), econet_nmi,
                             state_.memory.econet_socket.nmi_enable_ff() ? 1 : 0,
                             da->irq_output() ? 1 : 0,
                             state_.cpu.device_nmi_flags, state_.cpu.nmi_flags,
@@ -770,7 +770,7 @@ private:
                 if (ticks_since == 0 || ticks_since == 1000 || ticks_since == 10000 ||
                     ticks_since == 100000 || ticks_since == 400000) {
                     fprintf(stderr, "[STRETCH+%llu] nmi_pending=%d, ff=%d, irq=%d, dev_nmi=0x%02X, nmi_flags=0x%02X, rx_fifo_empty=%d\n",
-                            ticks_since, econet_nmi,
+                            static_cast<unsigned long long>(ticks_since), econet_nmi,
                             state_.memory.econet_socket.nmi_enable_ff() ? 1 : 0,
                             da2->irq_output() ? 1 : 0,
                             state_.cpu.device_nmi_flags, state_.cpu.nmi_flags,

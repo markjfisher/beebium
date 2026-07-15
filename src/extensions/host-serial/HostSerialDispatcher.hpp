@@ -48,8 +48,7 @@ public:
             }
             HostSerialConfig resp;
             fill_config(resp, endpoint_.ui_snapshot());
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         if (method == "SetConfig") {
             HostSerialSetConfigRequest req;
@@ -102,8 +101,7 @@ private:
         // as it stands now (the proto documents the eventual-consistency).
         HostSerialConfig resp;
         fill_config(resp, endpoint_.ui_snapshot());
-        resp.SerializeToString(&response);
-        return RpcStatus::ok();
+        return serialized(resp.SerializeToString(&response));
     }
 
     template <typename Msg>

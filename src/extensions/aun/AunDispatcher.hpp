@@ -127,8 +127,7 @@ private:
             std::lock_guard<std::mutex> lock(mutex_);
             body(req, resp);
         }
-        resp.SerializeToString(&response);
-        return RpcStatus::ok();
+        return serialized(resp.SerializeToString(&response));
     }
 
     template <typename Resp>

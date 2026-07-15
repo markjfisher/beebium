@@ -54,8 +54,7 @@ public:
                 reinterpret_cast<const std::uint8_t*>(data.data()), data.size());
             RpcSerialSendResponse resp;
             resp.set_accepted(static_cast<std::uint32_t>(accepted));
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         if (method == "Receive") {
             RpcSerialReceiveRequest req;
@@ -65,15 +64,13 @@ public:
             std::vector<std::uint8_t> bytes = endpoint_.drain(req.max_bytes());
             RpcSerialReceiveResponse resp;
             resp.set_data(std::string(bytes.begin(), bytes.end()));
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         if (method == "GetStatus") {
             RpcSerialStatus resp;
             resp.set_tx_pending(static_cast<std::uint32_t>(endpoint_.tx_pending()));
             resp.set_rx_pending(static_cast<std::uint32_t>(endpoint_.rx_pending()));
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         return RpcStatus::error(kRpcUnimplemented,
                                 "RpcSerial has no method '" + std::string(method) + "'");

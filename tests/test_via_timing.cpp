@@ -743,7 +743,7 @@ TEST_CASE("ACR write during timer operation", "[via][hardware-validated][acr]") 
     // LDA $FE60 : STA R%+3          ; Read ORB, store result[3]
     // CLI : RTS
 
-    size_t pc = 0x0400;
+    uint16_t pc = 0x0400;
     machine.write(pc++, 0x78);        // SEI
     machine.write(pc++, 0xA9);        // LDA #$FF
     machine.write(pc++, 0xFF);
@@ -1004,7 +1004,7 @@ TEST_CASE("T1LH write clears interrupt flag", "[via][hardware-validated][interru
     // LDA $FE6D : STA R%+1          ; Read IFR (should be clear now)
     // CLI : RTS
 
-    size_t pc = 0x0400;
+    uint16_t pc = 0x0400;
     machine.write(pc++, 0x78);        // SEI
     machine.write(pc++, 0xA9);        // LDA #$7F
     machine.write(pc++, 0x7F);
@@ -1087,7 +1087,7 @@ TEST_CASE("T1 latch write timing relative to expiry", "[via][hardware-validated]
     // LDA $FE64 : STA R%+1          ; Read T1CL
     // CLI : RTS
 
-    size_t pc = 0x0400;
+    uint16_t pc = 0x0400;
     machine.write(pc++, 0x78);        // SEI
     machine.write(pc++, 0xA9);        // LDA #$00
     machine.write(pc++, 0x00);
