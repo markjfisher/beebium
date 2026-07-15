@@ -51,6 +51,15 @@ elseif(MSVC)
         /Zc:__cplusplus     # Correct __cplusplus macro value
         /utf-8              # Source and execution charset UTF-8
         /wd4324             # Structure padding due to alignas (intentional for cache-line alignment)
+        /wd4251             # dll-interface for std:: members; unavoidable in the generated protobuf headers and benign with a single shared runtime
+        /wd4275             # non dll-interface base class; same origin and rationale as 4251
+    )
+    # MSVC deprecates the standard C library functions (fopen, fread, getenv,
+    # ...) in favour of its non-portable _s variants. These are portable
+    # standard functions, so silence the deprecation rather than fork the code.
+    add_compile_definitions(
+        _CRT_SECURE_NO_WARNINGS
+        _CRT_NONSTDC_NO_WARNINGS
     )
 endif()
 
