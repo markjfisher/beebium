@@ -17,7 +17,7 @@
 // environment variable is set to point at a running AUN file server.
 //
 // Example:
-//   BEEBIUM_FILESERVER=0.254:127.0.0.1:32768 BEEBIUM_LOCAL_PORT=10101 \
+//   BEEBIUM_FILESERVER=0.254:127.0.0.1:32768 BEEBIUM_LOCAL_PORT=10101
 //     ./tests/test_econet_fileserver
 //
 // The file server can be:

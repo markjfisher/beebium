@@ -300,7 +300,7 @@ TEST_CASE("v1.26 TBSET month register sets UC bit", "[saf3019p][v126][uc]") {
     tset(chip, 0, 6);
 
     // Read back: the chip stores the wrapped value
-    int month = tread(chip, 0);
+    [[maybe_unused]] int month = tread(chip, 0);
     // The UC bit may affect wrapping. Let's just verify we get a valid month.
     // With UC bit set, the raw BCD is 0x06 | 0x40 = 0x46.
     // Month counter wrapping: 0x46 = 70 decimal. 70 >= 60 && < 80: 70-60=10.

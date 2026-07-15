@@ -118,4 +118,9 @@ elseif(MSVC)
         PROPERTIES
         COMPILE_FLAGS "/wd4100 /wd4127 /wd4244 /wd4267"
     )
+    # The per-source flags above only reach the generated .cc files. The
+    # generated *.pb.h headers narrow size_t in their inline setters, so every
+    # TU that includes them -- this library, the server executables, and the
+    # tests -- trips C4244/C4267. Propagate the suppression to those consumers.
+    target_compile_options(beebium_service PUBLIC /wd4244 /wd4267)
 endif()

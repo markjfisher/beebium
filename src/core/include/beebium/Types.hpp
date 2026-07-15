@@ -71,7 +71,7 @@ struct BreakpointEntry {
     // Condition expression (evaluated on address match).
     // Empty = unconditional (always stops). Uses the same expression syntax
     // as watchpoints, including the `hits` pseudo-variable.
-    std::optional<CompiledExpression> condition;
+    std::optional<CompiledExpression> condition{};
 
     // Hit counter: increments on every address match, available as `hits` in the condition.
     uint64_t hit_count = 0;
@@ -94,7 +94,7 @@ struct WatchpointEntry {
     // Empty = unconditional (always stops). Condition "false" = never stops (recording only).
     // The expression can use the `hits` pseudo-variable for hit count logic,
     // e.g. "hits == 5" (exact), "hits % 10 == 0" (multiple), "hits > 3" (greater).
-    std::optional<CompiledExpression> condition;
+    std::optional<CompiledExpression> condition{};
 
     // Hit counter: increments on every address match, available as `hits` in the condition.
     uint64_t hit_count = 0;

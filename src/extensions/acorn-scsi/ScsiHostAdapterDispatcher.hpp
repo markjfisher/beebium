@@ -53,8 +53,7 @@ public:
                 target->set_device_type(std::string(info.device_type));
                 target->set_description(std::string(info.description));
             }
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         if (method == "GetBusStatus") {
             GetScsiBusStatusResponse resp;
@@ -62,8 +61,7 @@ public:
             resp.set_selected_target(adapter_.bus().selected_target_id());
             resp.set_status_register(adapter_.bus().status_register());
             resp.set_irq_pending(adapter_.bus().irq_pending());
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         return RpcStatus::error(
             kRpcUnimplemented,

@@ -1685,3 +1685,20 @@ if(BEEBIUM_BUILD_SERVER AND NOT WIN32)
     )
     set_tests_properties(install_smoke PROPERTIES LABELS "packaging")
 endif()
+
+# The test bodies poke 6502 addresses and byte values with integer literals, so
+# MSVC /W4 reports a torrent of C4244/C4267 narrowing conversions that GCC and
+# Clang (-Wall -Wextra) accept as safe. Catch2's decomposition macros likewise
+# trip C4805 (bool/int mix). None indicate a defect in the test logic, so
+# silence them for the test executables while the production libraries keep the
+# strict narrowing diagnostics. Mirrors the generated-code suppression in
+# src/service/CMakeLists.txt.
+if(MSVC)
+    get_property(_beebium_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_beebium_target ${_beebium_dir_targets})
+        get_target_property(_beebium_target_type ${_beebium_target} TYPE)
+        if(_beebium_target_type STREQUAL "EXECUTABLE")
+            target_compile_options(${_beebium_target} PRIVATE /wd4244 /wd4267 /wd4805)
+        endif()
+    endforeach()
+endif()

@@ -77,6 +77,8 @@ endif()
 # Suppress warnings in third-party code
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(b2_shared_lib PRIVATE -w)
+elseif(MSVC)
+    target_compile_options(b2_shared_lib PRIVATE /W0)
 endif()
 
 # --- 6502 code generator ---
@@ -96,4 +98,6 @@ set_target_properties(6502_gen PROPERTIES
 # Suppress warnings in third-party code
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(6502_gen PRIVATE -w)
+elseif(MSVC)
+    target_compile_options(6502_gen PRIVATE /W0)
 endif()

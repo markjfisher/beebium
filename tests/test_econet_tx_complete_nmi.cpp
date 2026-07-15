@@ -48,17 +48,10 @@ void tick_adlc(Mc6854& adlc, int cycles) {
     }
 }
 
-void tick_socket(EconetSocket& socket, int cycles) {
-    for (int i = 0; i < cycles; ++i) {
-        socket.tick_rising();
-        socket.tick_falling();
-    }
-}
-
 constexpr uint16_t REG_CR1 = 0;
 constexpr uint16_t REG_CR2 = 1;
 constexpr uint16_t REG_TX_DATA = 2;
-constexpr uint16_t REG_TX_LAST = 3;  // Write with is_last=true (or CR4 if AC set)
+[[maybe_unused]] constexpr uint16_t REG_TX_LAST = 3;  // Write with is_last=true (or CR4 if AC set)
 
 } // namespace
 

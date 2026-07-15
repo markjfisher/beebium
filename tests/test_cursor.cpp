@@ -1313,8 +1313,8 @@ TEST_CASE("Cursor pixels in rendered frame per line", "[video][cursor][pixels]")
         machine.memory().crtc.write(1, cursor_addr & 0xFF);
 
         // Wait for a complete frame with cursor at new position
-        uint64_t start_version = fb.version();
-        while (fb.version() == start_version) {
+        uint64_t frame_version = fb.version();
+        while (fb.version() == frame_version) {
             machine.step();
             if (machine.memory().video_output.has_value()) {
                 renderer.process(machine.memory().video_output.value());

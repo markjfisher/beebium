@@ -57,8 +57,13 @@ std::unique_ptr<HardDiskImage> HardDiskImage::open(
     if (std::filesystem::exists(image->dsc_filepath_)) {
         FILE* dsc_file = std::fopen(image->dsc_filepath_.string().c_str(), "rb");
         if (dsc_file) {
-            std::fread(image->dsc_data_.data(), 1, kDscSize, dsc_file);
+            size_t bytes_read = std::fread(image->dsc_data_.data(), 1, kDscSize, dsc_file);
             std::fclose(dsc_file);
+            if (bytes_read != kDscSize) {
+                // Truncated descriptor file -- fall back to a generated default so
+                // the device still presents valid geometry.
+                image->generate_default_dsc(std::filesystem::file_size(dat_filepath));
+            }
         }
     } else {
         auto file_size = std::filesystem::file_size(dat_filepath);
