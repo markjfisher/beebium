@@ -28,6 +28,7 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -425,11 +426,14 @@ void PiconetBackend::send_frame(const NetworkFrame& frame) {
             // i.e. [ctrl, port, payload...]. FourWayHandshake's nf.data
             // contains only the payload (ctrl/port are in the named fields),
             // so we prepend them here.
-            std::vector<std::uint8_t> wire_data;
-            wire_data.reserve(2 + frame.data.size());
-            wire_data.push_back(static_cast<std::uint8_t>(frame.control_byte | WIRE_CTRL_HIGH_BIT));
-            wire_data.push_back(frame.port);
-            wire_data.insert(wire_data.end(), frame.data.begin(), frame.data.end());
+            // Size to the final length and fill by index (no realloc path for
+            // GCC's optimiser to mis-analyse as -Wfree-nonheap-object).
+            std::vector<std::uint8_t> wire_data(2 + frame.data.size());
+            wire_data[0] = static_cast<std::uint8_t>(frame.control_byte | WIRE_CTRL_HIGH_BIT);
+            wire_data[1] = frame.port;
+            if (!frame.data.empty()) {
+                std::memcpy(wire_data.data() + 2, frame.data.data(), frame.data.size());
+            }
             write_to_serial(*serial_, piconet::format_bcast(wire_data));
             break;
         }

@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -41,15 +42,18 @@ inline std::vector<std::uint8_t> build_scout_wire(
     std::uint8_t src_stn,  std::uint8_t src_net,
     std::uint8_t ctrl,     std::uint8_t port,
     const std::uint8_t* extra, std::size_t extra_len) {
-    std::vector<std::uint8_t> out;
-    out.reserve(6 + extra_len);
-    out.push_back(dest_stn);
-    out.push_back(dest_net);
-    out.push_back(src_stn);
-    out.push_back(src_net);
-    out.push_back(static_cast<std::uint8_t>(ctrl | 0x80));
-    out.push_back(port);
-    out.insert(out.end(), extra, extra + extra_len);
+    // Size to the final length and fill by index (no realloc path for GCC's
+    // optimiser to mis-analyse as -Wfree-nonheap-object).
+    std::vector<std::uint8_t> out(6 + extra_len);
+    out[0] = dest_stn;
+    out[1] = dest_net;
+    out[2] = src_stn;
+    out[3] = src_net;
+    out[4] = static_cast<std::uint8_t>(ctrl | 0x80);
+    out[5] = port;
+    if (extra_len) {
+        std::memcpy(out.data() + 6, extra, extra_len);
+    }
     return out;
 }
 
@@ -58,13 +62,15 @@ inline std::vector<std::uint8_t> build_data_wire(
     std::uint8_t dest_stn, std::uint8_t dest_net,
     std::uint8_t src_stn,  std::uint8_t src_net,
     const std::uint8_t* payload, std::size_t payload_len) {
-    std::vector<std::uint8_t> out;
-    out.reserve(4 + payload_len);
-    out.push_back(dest_stn);
-    out.push_back(dest_net);
-    out.push_back(src_stn);
-    out.push_back(src_net);
-    out.insert(out.end(), payload, payload + payload_len);
+    // Size to the final length and fill by index (see build_scout_wire).
+    std::vector<std::uint8_t> out(4 + payload_len);
+    out[0] = dest_stn;
+    out[1] = dest_net;
+    out[2] = src_stn;
+    out[3] = src_net;
+    if (payload_len) {
+        std::memcpy(out.data() + 4, payload, payload_len);
+    }
     return out;
 }
 

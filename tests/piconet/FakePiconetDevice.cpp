@@ -17,6 +17,7 @@
 #include "beebium/econet/piconet/Constants.hpp"
 
 #include <algorithm>
+#include <cstring>
 
 namespace beebium::piconet::test {
 
@@ -187,15 +188,18 @@ void FakePiconetDevice::inject_inbound_broadcast(std::uint8_t src_stn, std::uint
     if (mode_ == Mode::Stop) return;
 
     // Wire format: [dest=0xFF, dest_net=0xFF, src_stn, src_net, ctrl, port, payload...]
-    std::vector<std::uint8_t> wire;
-    wire.reserve(6 + payload.size());
-    wire.push_back(BROADCAST_ADDR);
-    wire.push_back(BROADCAST_ADDR);
-    wire.push_back(src_stn);
-    wire.push_back(src_net);
-    wire.push_back(static_cast<std::uint8_t>(ctrl | 0x80));
-    wire.push_back(port);
-    wire.insert(wire.end(), payload.begin(), payload.end());
+    // Size to the final length and fill by index (no realloc path for GCC's
+    // optimiser to mis-analyse as -Wfree-nonheap-object).
+    std::vector<std::uint8_t> wire(6 + payload.size());
+    wire[0] = BROADCAST_ADDR;
+    wire[1] = BROADCAST_ADDR;
+    wire[2] = src_stn;
+    wire[3] = src_net;
+    wire[4] = static_cast<std::uint8_t>(ctrl | 0x80);
+    wire[5] = port;
+    if (!payload.empty()) {
+        std::memcpy(wire.data() + 6, payload.data(), payload.size());
+    }
     enqueue_event_locked("RX_BROADCAST " + encode_base64(wire));
 }
 
