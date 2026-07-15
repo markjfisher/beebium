@@ -405,11 +405,13 @@ jobs:
     env:
       # Per-platform build parallelism (see the macOS arm64 job). The runner is
       # a 4-core Raspberry Pi 5 with ~8 GiB RAM. Each of the four server
-      # main_*.cpp TUs peaks at ~1.5 GiB in cc1plus -- the whole server (every
-      # gRPC service, subcommand and the extension framework) lives in the
-      # header-only, machine-templated server_main<> in ServerMain.hpp, so it
-      # is compiled in full once per machine variant. Four in parallel peak
-      # around 6 GiB, which fits, so use all four cores. (History: the previous
+      # main_*.cpp TUs is heavy in cc1plus (~1.8-2.4 GiB) -- the whole server
+      # (every gRPC service, subcommand and the extension framework) lives in
+      # the header-only, machine-templated server_main<> in ServerMain.hpp, so
+      # it is compiled in full once per machine variant. At -j4 all four
+      # compile at once; measured 2026-07-15 that peaked at ~7.5 GiB used
+      # (522 MiB RAM free, swap barely touched) and built in ~27 min -- it
+      # fits, but only just, so do not raise past 4. (History: the previous
       # 2 GiB Pi 4 could only manage -j1 -- even two of those TUs exhausted RAM
       # + swap and the kernel OOM-killed cc1plus.)
       CMAKE_BUILD_PARALLEL_LEVEL: "4"
