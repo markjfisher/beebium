@@ -31,13 +31,13 @@ jobs:
       VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/triplets
       VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg-downloads
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set VCPKG_INSTALLED_DIR
         run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $env:GITHUB_ENV
 
       - name: Cache vcpkg downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/vcpkg-downloads
           key: vcpkg-downloads-windows-static-77df67c
@@ -106,7 +106,7 @@ jobs:
       - name: List artifacts
         run: Get-ChildItem _artifacts
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bundle-windows-x64
           path: _artifacts/*.zip
@@ -121,7 +121,7 @@ jobs:
     needs: build
     runs-on: windows-2022
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: bundle-windows-x64
           path: dl

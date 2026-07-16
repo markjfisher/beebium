@@ -42,7 +42,7 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download .deb from the published Release URL
         env:
@@ -86,7 +86,7 @@ jobs:
             runner: ubuntu-24.04-arm
             image: menci/archlinuxarm:base
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download .tar.gz from the published Release URL
         env:

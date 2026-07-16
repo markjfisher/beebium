@@ -29,8 +29,8 @@ jobs:
     name: Preflight (protocol fingerprint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install protoc tooling
@@ -56,7 +56,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
@@ -73,7 +73,7 @@ jobs:
           echo "IMAGE_VERSION=$ImageVersion" >> $GITHUB_ENV
 
       - name: Cache vcpkg installed packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/vcpkg_installed
           key: vcpkg-${{ runner.os }}-arm64-static-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
@@ -149,7 +149,7 @@ jobs:
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: beebium-server-macos-arm64
           path: |
@@ -173,7 +173,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
@@ -190,7 +190,7 @@ jobs:
           echo "IMAGE_VERSION=$ImageVersion" >> $GITHUB_ENV
 
       - name: Cache vcpkg installed packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/vcpkg_installed
           key: vcpkg-${{ runner.os }}-x64-static-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
@@ -266,7 +266,7 @@ jobs:
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: beebium-server-macos-x86_64
           path: |
@@ -292,7 +292,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -381,7 +381,7 @@ jobs:
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: beebium-server-linux
           path: |
@@ -418,7 +418,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Build/test dependencies (cmake, gRPC/protobuf, Avahi, ...) are
       # pre-provisioned on the runner host rather than installed per run: this
@@ -474,7 +474,7 @@ jobs:
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: beebium-server-linux-arm64
           path: |
@@ -509,13 +509,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set VCPKG_INSTALLED_DIR
         run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $env:GITHUB_ENV
 
       - name: Cache vcpkg downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/vcpkg-downloads
           key: vcpkg-downloads-windows-77df67c
@@ -620,7 +620,7 @@ jobs:
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: beebium-server-windows
           path: build/src/server/Release/
@@ -634,7 +634,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
@@ -642,7 +642,7 @@ jobs:
           xcode-version: '16'
 
       - name: Download server artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-arm64
           path: server-build
@@ -681,7 +681,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Upload Beebium.app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Beebium-macos-arm64
           path: clients/macos/Beebium/build/Build/Products/Release/Beebium.app
@@ -695,7 +695,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
@@ -703,7 +703,7 @@ jobs:
           xcode-version: '16'
 
       - name: Download server artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-x86_64
           path: server-build
@@ -742,7 +742,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Upload Beebium.app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Beebium-macos-x86_64
           path: clients/macos/Beebium/build/Build/Products/Release/Beebium.app
@@ -756,12 +756,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -789,7 +789,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install gRPC runtime libraries
         run: |
@@ -800,7 +800,7 @@ jobs:
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.so).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-linux
           path: build
@@ -808,9 +808,9 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install dependencies
         working-directory: clients/typescript
@@ -834,13 +834,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Extract at 'build/' so the artifact's src/server/ and lib/
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-arm64
           path: build
@@ -848,9 +848,9 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install protoc
         run: brew install protobuf
@@ -877,13 +877,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Extract at 'build/' so the artifact's src/server/ and lib/
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-x86_64
           path: build
@@ -891,9 +891,9 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install protoc
         run: brew install protobuf
@@ -921,15 +921,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Run unit tests
         working-directory: clients/python
@@ -945,7 +945,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install gRPC runtime libraries
         run: |
@@ -956,7 +956,7 @@ jobs:
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.so).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-linux
           path: build
@@ -964,12 +964,12 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Run integration tests
         working-directory: clients/python
@@ -990,21 +990,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-windows
           path: build/src/server/Release
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Run integration tests
         working-directory: clients/python
@@ -1023,13 +1023,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Extract at 'build/' so the artifact's src/server/ and lib/
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-arm64
           path: build
@@ -1037,12 +1037,12 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Run integration tests
         working-directory: clients/python
@@ -1061,13 +1061,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Extract at 'build/' so the artifact's src/server/ and lib/
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-x86_64
           path: build
@@ -1075,12 +1075,12 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Run integration tests
         working-directory: clients/python
