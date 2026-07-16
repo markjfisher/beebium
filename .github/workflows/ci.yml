@@ -377,6 +377,35 @@ jobs:
             echo "::warning::A test failed on its first attempt and passed on rerun (flaky). See the ctest output above and root-cause it; do not rely on the retry."
           fi
 
+      # catch_discover_tests registers one ctest entry per Catch2 TEST_CASE, so
+      # this reports individual cases rather than test binaries (and expands
+      # each TEMPLATE_TEST_CASE per type). It only holds for a completed build:
+      # for a binary it cannot run, catch_discover_tests emits a single
+      # <target>_NOT_BUILT placeholder instead, which would silently collapse
+      # the count to roughly the number of test executables. Refuse to publish
+      # a number if any placeholder is present.
+      - name: Count tests
+        run: |
+          ctest --test-dir build --show-only=json-v1 > ctest-tests.json
+          python3 -c "
+          import json
+          names = [t['name'] for t in json.load(open('ctest-tests.json'))['tests']]
+          missing = [n for n in names if 'NOT_BUILT' in n]
+          if missing:
+              raise SystemExit(f'{len(missing)} test binaries were not built, e.g. {missing[:3]}')
+          if not names:
+              raise SystemExit('ctest discovered no tests')
+          open('cpp.count', 'w').write(str(len(names)))
+          print(f'cpp: {len(names)}')
+          "
+
+      - name: Upload test count
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-count-cpp
+          path: cpp.count
+          retention-days: 1
+
       - name: Upload server binaries
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
@@ -782,6 +811,31 @@ jobs:
         working-directory: clients/typescript
         run: npm run test:unit
 
+      # Enumerates every test case without running any, covering the unit and
+      # integration files alike (the integration cases run in a sibling job).
+      # A bare `vitest list` is deliberate: passing --exclude replaces vitest's
+      # default exclude set rather than extending it, which lets discovery walk
+      # outside the client directory and silently inflate the count.
+      - name: Count tests
+        working-directory: clients/typescript
+        run: |
+          npx vitest list --json > list.json
+          python3 -c "
+          import json
+          tests = json.load(open('list.json'))
+          if not tests:
+              raise SystemExit('vitest collected no tests')
+          open('typescript.count', 'w').write(str(len(tests)))
+          print(f'typescript: {len(tests)}')
+          "
+
+      - name: Upload test count
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-count-typescript
+          path: clients/typescript/typescript.count
+          retention-days: 1
+
   typescript-integration-linux:
     name: TypeScript Client Integration Tests (Linux)
     runs-on: ubuntu-latest
@@ -938,6 +992,24 @@ jobs:
         # fails a hung test after 10 min rather than stalling the job.
         run: uv run --with pytest --with pytest-timeout python -m pytest tests/ -v --durations=0 --timeout=600
 
+      # One line per collected test ("path::test_name"), so counting the lines
+      # carrying "::" is independent of pytest's summary wording. Parametrised
+      # cases are collected individually and so count individually.
+      - name: Count tests
+        working-directory: clients/python
+        run: |
+          uv run --with pytest --with pytest-timeout python -m pytest tests/ --collect-only -q \
+            | grep -cE '::' > python.count
+          test -s python.count && [ "$(cat python.count)" -gt 0 ] || { echo "pytest collected no tests"; exit 1; }
+          echo "python: $(cat python.count)"
+
+      - name: Upload test count
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-count-python
+          path: clients/python/python.count
+          retention-days: 1
+
   python-integration-linux:
     name: Python Client Integration Tests (Linux)
     runs-on: ubuntu-latest
@@ -1091,3 +1163,92 @@ jobs:
         # have data on which integration tests are genuinely long; --timeout=600
         # fails a hung test after 10 min rather than stalling the job.
         run: uv run --with pytest --with pytest-timeout python -m pytest tests/ -v --durations=0 --timeout=600
+
+  # Sums the per-suite counts and publishes a shields.io endpoint badge to the
+  # orphan `badges` branch, which the README points at. Keeping the JSON on its
+  # own branch keeps master's history free of once-per-push badge commits, and
+  # avoids depending on a gist (no external state, no PAT).
+  test-count-badge:
+    name: Publish test-count badge
+    runs-on: ubuntu-latest
+    needs: [server-linux, python-client, typescript-client]
+    # Publish only from master: a feature branch or PR must not move the number
+    # the README shows. `needs` also means a failed build never publishes a
+    # count. Pushes authenticated with GITHUB_TOKEN do not trigger workflows,
+    # so committing here cannot re-trigger CI.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download test counts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: test-count-*
+          merge-multiple: true
+          path: counts
+
+      - name: Build badge JSON
+        run: |
+          python3 -c "
+          import json, pathlib
+
+          counts = {p.stem: int(p.read_text().strip())
+                    for p in sorted(pathlib.Path('counts').glob('*.count'))}
+
+          # Refuse to publish a partial sum: a suite silently dropping out would
+          # otherwise look like tests being deleted.
+          expected = {'cpp', 'python', 'typescript'}
+          if set(counts) != expected:
+              raise SystemExit(f'expected counts for {sorted(expected)}, got {sorted(counts)}')
+
+          total = sum(counts.values())
+          for suite, n in sorted(counts.items()):
+              print(f'{suite:>12}: {n}')
+          print(f'{\"total\":>12}: {total}')
+
+          pathlib.Path('tests.json').write_text(json.dumps({
+              'schemaVersion': 1,
+              'label': 'tests',
+              'message': str(total),
+              'color': 'blue',
+          }))
+          pathlib.Path('total.txt').write_text(str(total))
+          "
+
+      - name: Publish to badges branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TOTAL="$(cat total.txt)"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # The branch is orphan and holds only the badge JSON, so clone it if it
+          # exists and bootstrap it if this is the first run.
+          if git clone --quiet --depth 1 --branch badges "$REMOTE" badges-repo 2>/dev/null; then
+            echo "Using existing badges branch"
+          else
+            echo "Bootstrapping badges branch"
+            mkdir badges-repo
+            git -C badges-repo init --quiet -b badges
+            git -C badges-repo remote add origin "$REMOTE"
+          fi
+
+          cp tests.json badges-repo/tests.json
+          cd badges-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests.json
+
+          # The count is unchanged on most pushes; committing anyway would add a
+          # commit per push for no information.
+          if git diff --staged --quiet; then
+            echo "Test count unchanged at ${TOTAL}; nothing to publish."
+            exit 0
+          fi
+
+          git commit --quiet -m "Update test-count badge: ${TOTAL} tests"
+          git push --quiet origin badges
+          echo "Published test count: ${TOTAL}"
