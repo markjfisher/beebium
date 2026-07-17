@@ -56,8 +56,15 @@ def mock_stub():
 
 
 @pytest.fixture
-def transport(mock_stub):
-    return EconetTransport(mock_stub)
+def mock_channel():
+    # EconetTransport keeps the channel only to hand to the typed adapters it
+    # bridges to. The cases here cover list()/active, which never reach it.
+    return MagicMock()
+
+
+@pytest.fixture
+def transport(mock_stub, mock_channel):
+    return EconetTransport(mock_stub, mock_channel)
 
 
 def test_list_empty(transport):
