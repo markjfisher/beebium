@@ -811,8 +811,16 @@ jobs:
         working-directory: clients/typescript
         run: npm run test:unit
 
-      # Enumerates every test case without running any, covering the unit and
+      # Enumerates test cases without running any, covering the unit and
       # integration files alike (the integration cases run in a sibling job).
+      #
+      # `vitest list` omits skipped tests, so a case gated behind .skipIf() is
+      # counted where it runs and not where it does not: this reports 631 under
+      # CI=true against 632 without it, the difference being one it.skipIf(isCI)
+      # case. The C++ and Python counts do include their skipped tests, so the
+      # total is "cases that exist, less those TypeScript skips here". Left as
+      # is: the discrepancy is one test, and vitest offers no list-skipped knob.
+      #
       # A bare `vitest list` is deliberate: passing --exclude replaces vitest's
       # default exclude set rather than extending it, which lets discovery walk
       # outside the client directory and silently inflate the count.
