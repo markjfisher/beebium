@@ -68,8 +68,7 @@ public:
                 << std::setfill('0') << std::setw(2) << dt.hour << ":"
                 << std::setfill('0') << std::setw(2) << dt.minute;
             resp.set_iso8601(iso.str());
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         if (method == "SetTime") {
             SetRtcTimeRequest req;
@@ -94,8 +93,7 @@ public:
                         std::to_string(max_year) + ")");
             }
             SetRtcTimeResponse resp;
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         if (method == "GetRegisters") {
             chip_.advance_counters();
@@ -103,8 +101,7 @@ public:
             for (int i = 0; i < 8; i++) {
                 resp.add_registers(chip_.read_register(i));
             }
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         if (method == "SetRegister") {
             SetRtcRegisterRequest req;
@@ -117,8 +114,7 @@ public:
             }
             chip_.write_register(reg, static_cast<std::uint8_t>(req.bcd_value()));
             SetRtcRegisterResponse resp;
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         return RpcStatus::error(
             kRpcUnimplemented,

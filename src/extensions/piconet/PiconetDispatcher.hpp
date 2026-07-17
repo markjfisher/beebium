@@ -62,8 +62,7 @@ public:
                 // which also requires firmware mode == LISTEN).
                 resp.set_serial_open(backend->is_serial_open());
             }
-            resp.SerializeToString(&response);
-            return RpcStatus::ok();
+            return serialized(resp.SerializeToString(&response));
         }
         return RpcStatus::error(
             kRpcUnimplemented,

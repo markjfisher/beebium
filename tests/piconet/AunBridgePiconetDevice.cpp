@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <thread>
 
 namespace beebium::piconet::test {
@@ -309,15 +310,18 @@ void AunBridgePiconetDevice::emit_rx_transmit_locked(const NetworkFrame& nf,
 }
 
 void AunBridgePiconetDevice::emit_rx_broadcast_locked(const NetworkFrame& nf) {
-    std::vector<std::uint8_t> wire;
-    wire.reserve(6 + nf.data.size());
-    wire.push_back(BROADCAST_ADDR);
-    wire.push_back(BROADCAST_ADDR);
-    wire.push_back(nf.src_stn);
-    wire.push_back(nf.src_net);
-    wire.push_back(static_cast<std::uint8_t>(nf.control_byte | WIRE_CTRL_HIGH_BIT));
-    wire.push_back(nf.port);
-    wire.insert(wire.end(), nf.data.begin(), nf.data.end());
+    // Size to the final length and fill by index (no realloc path for GCC's
+    // optimiser to mis-analyse as -Wfree-nonheap-object).
+    std::vector<std::uint8_t> wire(6 + nf.data.size());
+    wire[0] = BROADCAST_ADDR;
+    wire[1] = BROADCAST_ADDR;
+    wire[2] = nf.src_stn;
+    wire[3] = nf.src_net;
+    wire[4] = static_cast<std::uint8_t>(nf.control_byte | WIRE_CTRL_HIGH_BIT);
+    wire[5] = nf.port;
+    if (!nf.data.empty()) {
+        std::memcpy(wire.data() + 6, nf.data.data(), nf.data.size());
+    }
 
     std::string ev = "RX_BROADCAST ";
     ev += encode_base64(wire);

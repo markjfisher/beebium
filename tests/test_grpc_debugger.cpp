@@ -1575,7 +1575,7 @@ TEST_CASE("Multiple breakpoints at same address with different conditions", "[gr
 
 
     // Two breakpoints at $0402 with different conditions
-    uint32_t bp1_id, bp2_id;
+    uint32_t bp1_id;
     {
         grpc::ClientContext ctx;
         beebium::AddBreakpointRequest req;
@@ -1594,7 +1594,6 @@ TEST_CASE("Multiple breakpoints at same address with different conditions", "[gr
         beebium::AddBreakpointResponse resp;
         fixture.debugger().AddBreakpoint(&ctx, req, &resp);
         REQUIRE(resp.success());
-        bp2_id = resp.id();
     }
 
     // A counts up: 0, 1, 2, 3... Should stop when A==3 (first matching condition)

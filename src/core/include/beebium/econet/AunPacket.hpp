@@ -47,21 +47,26 @@ namespace aun_packet {
 // The handle parameter is written into bytes 4-7. Addressing fields in the
 // NetworkFrame are not encoded — AUN derives addressing from UDP source/dest.
 inline std::vector<uint8_t> encode(const NetworkFrame& frame, uint32_t handle) {
-    std::vector<uint8_t> buffer;
-    buffer.reserve(AUN_HEADER_SIZE + frame.data.size());
+    // Size the buffer to its final length up front and write each byte by
+    // index. This mirrors the header layout documented above and, unlike a
+    // reserve()+push_back() sequence, gives no realloc path for GCC's
+    // optimiser to mis-analyse (-Wfree-nonheap-object false positive).
+    std::vector<uint8_t> buffer(AUN_HEADER_SIZE + frame.data.size());
 
-    buffer.push_back(static_cast<uint8_t>(frame.type));
-    buffer.push_back(frame.port);
-    buffer.push_back(frame.control_byte & 0x7F);  // Bit 7 cleared for AUN
-    buffer.push_back(0);  // Pad
+    buffer[0] = static_cast<uint8_t>(frame.type);
+    buffer[1] = frame.port;
+    buffer[2] = frame.control_byte & 0x7F;  // Bit 7 cleared for AUN
+    buffer[3] = 0;  // Pad
 
     // Handle: little-endian uint32_t
-    buffer.push_back(static_cast<uint8_t>(handle));
-    buffer.push_back(static_cast<uint8_t>(handle >> 8));
-    buffer.push_back(static_cast<uint8_t>(handle >> 16));
-    buffer.push_back(static_cast<uint8_t>(handle >> 24));
+    buffer[4] = static_cast<uint8_t>(handle);
+    buffer[5] = static_cast<uint8_t>(handle >> 8);
+    buffer[6] = static_cast<uint8_t>(handle >> 16);
+    buffer[7] = static_cast<uint8_t>(handle >> 24);
 
-    buffer.insert(buffer.end(), frame.data.begin(), frame.data.end());
+    if (!frame.data.empty()) {
+        std::memcpy(buffer.data() + AUN_HEADER_SIZE, frame.data.data(), frame.data.size());
+    }
 
     return buffer;
 }

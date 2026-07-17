@@ -71,6 +71,7 @@ for entry in "${PROTOS[@]}"; do
         --ts_proto_opt=env=node \
         --ts_proto_opt=forceLong=number \
         --ts_proto_opt=useExactTypes=false \
+        --ts_proto_opt=importSuffix=.js \
         -I "$SERVICE_PROTO_DIR" \
         -I "$AUN_PROTO_DIR" \
         -I "$PICONET_PROTO_DIR" \

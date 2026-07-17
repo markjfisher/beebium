@@ -68,8 +68,8 @@ struct PresetConfig {
     std::optional<PresetStorageConfig> storage;
     std::optional<PresetEconetConfig> econet;
     std::optional<double> thumbnail_capture_delay_seconds;  // For capture-screenshot subcommand
-    std::vector<PresetExtensionConfig> extensions;
-    std::vector<SidewaysConfig> sideways;         // sideways_bank.slots (slot/type/image)
+    std::vector<PresetExtensionConfig> extensions{};
+    std::vector<SidewaysConfig> sideways{};       // sideways_bank.slots (slot/type/image)
     // Future: startup_options, coprocessor, os_rom
 };
 

@@ -4,6 +4,11 @@
 
 # Beebium
 
+<p align="center">
+  <a href="https://github.com/rob-smallshire/beebium/actions/workflows/ci.yml"><img src="https://github.com/rob-smallshire/beebium/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
+  <a href="https://github.com/rob-smallshire/beebium/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frob-smallshire%2Fbeebium%2Fbadges%2Ftests.json" alt="Test count"></a>
+</p>
+
 A different take on a BBC Micro emulator, with a Chromium-inspired architecture.
 
 ## Overview

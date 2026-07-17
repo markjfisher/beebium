@@ -276,7 +276,7 @@ public:
             // Store graphics data for hold mode
             if ((value & 0x20) && m_charset != TeletextCharset::Alpha) {
                 if (!m_conceal) {
-                    m_last_graphics_data = data;
+                    m_last_graphics_data = static_cast<uint8_t>(data);
                 }
             }
         }

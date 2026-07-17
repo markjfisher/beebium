@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <mutex>
 #include <span>
 #include <string>
 #include <string_view>
@@ -30,9 +31,15 @@ namespace beebium::piconet::test {
 // simulate inbound serial traffic, including adversarial chunking across
 // reads).
 //
-// Pure in-process; no real I/O. Safe to use in any thread provided the
-// caller observes the SerialPort threading contract (writes from one
-// thread, reads from another, no concurrent writes).
+// Pure in-process; no real I/O.
+//
+// Every member is serialised under mutex_, because the object this stands in
+// for -- a kernel serial buffer -- is itself safe to fill from one thread
+// while another drains it. PiconetBackend starts its reader thread from its
+// constructor, so that thread is already inside read() by the time a test
+// stages a chunk or inspects a write: the test thread and the reader thread
+// touch this object concurrently for its whole lifetime, and no ordering
+// discipline on the test's part can prevent it.
 class MockPiconetSerial : public SerialPort {
 public:
     MockPiconetSerial() = default;
@@ -40,6 +47,7 @@ public:
     // ---- SerialPort interface ----
 
     ReadResult read(std::span<std::uint8_t> buffer) override {
+        const std::lock_guard<std::mutex> lock(mutex_);
         if (!open_) {
             return ReadResult{0, false, true};
         }
@@ -60,6 +68,7 @@ public:
     }
 
     WriteResult write(std::span<const std::uint8_t> bytes) override {
+        const std::lock_guard<std::mutex> lock(mutex_);
         if (!open_) {
             return WriteResult{0, true};
         }
@@ -67,12 +76,26 @@ public:
         return WriteResult{bytes.size(), false};
     }
 
-    bool is_open() const override { return open_; }
+    bool is_open() const override {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        return open_;
+    }
 
-    void close() override { open_ = false; }
+    void close() override {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        open_ = false;
+    }
 
+    // Returns by value rather than referring into open_error_, which another
+    // thread may reassign via set_open_error(). The SerialPort interface fixes
+    // the string_view return type, so the storage must outlive the call: hand
+    // back a view of a string with static storage duration, refreshed under the
+    // lock. Tests read this from one thread at a time.
     std::string_view open_error() const noexcept override {
-        return open_error_;
+        const std::lock_guard<std::mutex> lock(mutex_);
+        static thread_local std::string snapshot;
+        snapshot = open_error_;
+        return snapshot;
     }
 
     // ---- Test control: stage inbound bytes ----
@@ -82,29 +105,41 @@ public:
     // each chunk is a separate read() boundary, which lets tests force
     // partial-line conditions.
     void stage_read_chunk(std::string_view text) {
+        const std::lock_guard<std::mutex> lock(mutex_);
         read_chunks_.emplace_back(text.begin(), text.end());
     }
     void stage_read_chunk(std::span<const std::uint8_t> bytes) {
+        const std::lock_guard<std::mutex> lock(mutex_);
         read_chunks_.emplace_back(bytes.begin(), bytes.end());
     }
 
     // ---- Test control: connection state ----
 
-    void set_open(bool o) { open_ = o; }
+    void set_open(bool o) {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        open_ = o;
+    }
 
     // Inject a synthetic OS-level error so tests can verify the
     // PiconetBackend / PiconetUi paths that surface
     // serial->open_error() to the Indicator. Default is empty.
-    void set_open_error(std::string err) { open_error_ = std::move(err); }
+    void set_open_error(std::string err) {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        open_error_ = std::move(err);
+    }
 
     // ---- Test inspection: captured writes ----
 
     // Number of write() calls observed.
-    std::size_t write_count() const { return writes_.size(); }
+    std::size_t write_count() const {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        return writes_.size();
+    }
 
     // Get the bytes from the i-th write() as a string (PiconetBackend writes
     // ASCII-safe protocol lines).
     std::string write_as_string(std::size_t i) const {
+        const std::lock_guard<std::mutex> lock(mutex_);
         const auto& w = writes_.at(i);
         return std::string(w.begin(), w.end());
     }
@@ -112,6 +147,7 @@ public:
     // All writes concatenated into one string; useful when PiconetBackend
     // makes several small writes per command.
     std::string all_writes_concatenated() const {
+        const std::lock_guard<std::mutex> lock(mutex_);
         std::string out;
         for (const auto& w : writes_) {
             out.append(w.begin(), w.end());
@@ -119,9 +155,13 @@ public:
         return out;
     }
 
-    void clear_writes() { writes_.clear(); }
+    void clear_writes() {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        writes_.clear();
+    }
 
 private:
+    mutable std::mutex mutex_;
     bool open_ = true;
     std::string open_error_;
     std::deque<std::vector<std::uint8_t>> read_chunks_;

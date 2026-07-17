@@ -29,8 +29,8 @@ jobs:
     name: Preflight (protocol fingerprint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install protoc tooling
@@ -46,10 +46,17 @@ jobs:
     env:
       VCPKG_DEFAULT_TRIPLET: arm64-osx-static
       VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/triplets
+      # Per-platform build parallelism. The GitHub-hosted macOS arm64 runner is
+      # RAM-starved for a static gRPC/protobuf build: several concurrent C++
+      # translation units (and the final static links) push it into swap, which
+      # is slower overall than serialising. Build one target at a time here.
+      # CMAKE_BUILD_PARALLEL_LEVEL is CMake's native parallelism knob; the build
+      # step passes it explicitly to --parallel so the value is unambiguous.
+      CMAKE_BUILD_PARALLEL_LEVEL: "1"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
@@ -66,7 +73,7 @@ jobs:
           echo "IMAGE_VERSION=$ImageVersion" >> $GITHUB_ENV
 
       - name: Cache vcpkg installed packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/vcpkg_installed
           key: vcpkg-${{ runner.os }}-arm64-static-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
@@ -107,7 +114,7 @@ jobs:
           exit 1
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel "${CMAKE_BUILD_PARALLEL_LEVEL}"
 
       - name: Verify static linking
         run: |
@@ -142,7 +149,7 @@ jobs:
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: beebium-server-macos-arm64
           path: |
@@ -166,7 +173,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
@@ -183,7 +190,7 @@ jobs:
           echo "IMAGE_VERSION=$ImageVersion" >> $GITHUB_ENV
 
       - name: Cache vcpkg installed packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/vcpkg_installed
           key: vcpkg-${{ runner.os }}-x64-static-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
@@ -259,7 +266,7 @@ jobs:
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: beebium-server-macos-x86_64
           path: |
@@ -277,9 +284,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: preflight
 
+    env:
+      # Per-platform build parallelism (see the macOS arm64 job). The hosted
+      # ubuntu-latest runner has plenty of cores but a modest RAM ceiling for a
+      # gRPC/protobuf C++ build, so cap at 2 concurrent compiles.
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -311,7 +324,7 @@ jobs:
           exit 1
 
       - name: Build
-        run: cmake --build build --parallel 2
+        run: cmake --build build --parallel "${CMAKE_BUILD_PARALLEL_LEVEL}"
 
       - name: Start Avahi daemon (Linux mDNS advertiser tests)
         # The Linux advertiser test needs a running avahi-daemon (with a D-Bus
@@ -364,13 +377,135 @@ jobs:
             echo "::warning::A test failed on its first attempt and passed on rerun (flaky). See the ctest output above and root-cause it; do not rely on the retry."
           fi
 
+      # catch_discover_tests registers one ctest entry per Catch2 TEST_CASE, so
+      # this reports individual cases rather than test binaries (and expands
+      # each TEMPLATE_TEST_CASE per type). It only holds for a completed build:
+      # for a binary it cannot run, catch_discover_tests emits a single
+      # <target>_NOT_BUILT placeholder instead, which would silently collapse
+      # the count to roughly the number of test executables. Refuse to publish
+      # a number if any placeholder is present.
+      - name: Count tests
+        run: |
+          ctest --test-dir build --show-only=json-v1 > ctest-tests.json
+          python3 -c "
+          import json
+          names = [t['name'] for t in json.load(open('ctest-tests.json'))['tests']]
+          missing = [n for n in names if 'NOT_BUILT' in n]
+          if missing:
+              raise SystemExit(f'{len(missing)} test binaries were not built, e.g. {missing[:3]}')
+          if not names:
+              raise SystemExit('ctest discovered no tests')
+          open('cpp.count', 'w').write(str(len(names)))
+          print(f'cpp: {len(names)}')
+          "
+
+      - name: Upload test count
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-count-cpp
+          path: cpp.count
+          retention-days: 1
+
       - name: Upload server binaries
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: beebium-server-linux
+          path: |
+            build/src/server/beebium-model-b
+            build/src/server/extensions/
+            build/lib/libbeebium_extension_api.so
+            build/lib/libbeebium_extension_ui_proto.so
+          retention-days: 7
+
+  server-linux-arm64:
+    name: Build and Test Server (Linux arm64)
+    # Self-hosted arm64 Linux runner (see docs/local-arm64-runner.md, which is
+    # gitignored). GitHub does not offer hosted arm64 Linux runners, so this
+    # native aarch64 coverage comes from our own box.
+    runs-on: [self-hosted, Linux, ARM64]
+    needs: preflight
+    # A from-scratch build on the Pi still takes a while even at -j4 (see
+    # CMAKE_BUILD_PARALLEL_LEVEL below); bound it generously.
+    timeout-minutes: 180
+
+    env:
+      # Per-platform build parallelism (see the macOS arm64 job). The runner is
+      # a 4-core Raspberry Pi 5 with ~8 GiB RAM. Each of the four server
+      # main_*.cpp TUs is heavy in cc1plus (~1.8-2.4 GiB) -- the whole server
+      # (every gRPC service, subcommand and the extension framework) lives in
+      # the header-only, machine-templated server_main<> in ServerMain.hpp, so
+      # it is compiled in full once per machine variant. At -j4 all four
+      # compile at once; measured 2026-07-15 that peaked at ~7.5 GiB used
+      # (522 MiB RAM free, swap barely touched) and built in ~27 min -- it
+      # fits, but only just, so do not raise past 4. (History: the previous
+      # 2 GiB Pi 4 could only manage -j1 -- even two of those TUs exhausted RAM
+      # + swap and the kernel OOM-killed cc1plus.)
+      CMAKE_BUILD_PARALLEL_LEVEL: "4"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Build/test dependencies (cmake, gRPC/protobuf, Avahi, ...) are
+      # pre-provisioned on the runner host rather than installed per run: this
+      # is a persistent self-hosted box, so re-installing every build would be
+      # wasteful and would require passwordless sudo in the job. See
+      # docs/local-arm64-runner.md for the provisioning steps.
+      - name: Show toolchain
+        run: |
+          cmake --version
+          gcc --version | head -1
+          pkg-config --exists grpc++ && echo "grpc++: $(pkg-config --modversion grpc++)"
+
+      # Retry configure: FetchContent pulls Catch2 and nlohmann_json from
+      # GitHub at configure time, which intermittently 504s. Clean the build
+      # tree and retry rather than failing the whole run on a transient blip.
+      - name: Configure CMake
+        run: |
+          for attempt in 1 2 3; do
+            if cmake -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DBEEBIUM_BUILD_TESTS=ON \
+                -DBEEBIUM_BUILD_SERVICE=ON \
+                -DBEEBIUM_BUILD_SERVER=ON; then
+              exit 0
+            fi
+            echo "::warning::CMake configure failed (attempt ${attempt}/3); retrying in case the cause was transient (e.g. a FetchContent download). A deterministic failure will surface after the final attempt."
+            rm -rf build
+            sleep $((attempt * 20))
+          done
+          echo "::error::CMake configure failed after 3 attempts"
+          exit 1
+
+      - name: Build
+        run: cmake --build build --parallel "${CMAKE_BUILD_PARALLEL_LEVEL}"
+
+      - name: Run tests
+        env:
+          # Require both the Avahi advertise AND browse paths to actually run:
+          # validating the real aarch64 Pi round trip is a stated goal (the
+          # hosted x86 Linux job already requires it). avahi-daemon runs as a
+          # system service on the Pi, so no per-job daemon bring-up is needed.
+          BEEBIUM_REQUIRE_MDNS: "1"
+          BEEBIUM_REQUIRE_MDNS_BROWSE: "1"
+        # See the other jobs for the rationale behind --timeout 120 and
+        # --repeat until-pass:2.
+        run: |
+          ctest --test-dir build --output-on-failure --timeout 120 --repeat until-pass:2 2>&1 | tee ctest.log
+          if grep -qE '\*\*\*(Failed|Timeout|Exception)' ctest.log; then
+            echo "::warning::A test failed on its first attempt and passed on rerun (flaky). See the ctest output above and root-cause it; do not rely on the retry."
+          fi
+
+      - name: Upload server binaries
+        # Preserve the built binaries even if a step failed, so a re-run of a
+        # dependent job can reuse them instead of forcing a full rebuild.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: beebium-server-linux-arm64
           path: |
             build/src/server/beebium-model-b
             build/src/server/extensions/
@@ -403,13 +538,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set VCPKG_INSTALLED_DIR
         run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $env:GITHUB_ENV
 
       - name: Cache vcpkg downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/vcpkg-downloads
           key: vcpkg-downloads-windows-77df67c
@@ -514,7 +649,7 @@ jobs:
         # Preserve the built binaries even if a step failed, so a re-run of a
         # dependent job can reuse them instead of forcing a full rebuild.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: beebium-server-windows
           path: build/src/server/Release/
@@ -528,7 +663,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
@@ -536,7 +671,7 @@ jobs:
           xcode-version: '16'
 
       - name: Download server artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-arm64
           path: server-build
@@ -575,7 +710,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Upload Beebium.app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Beebium-macos-arm64
           path: clients/macos/Beebium/build/Build/Products/Release/Beebium.app
@@ -589,7 +724,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
@@ -597,7 +732,7 @@ jobs:
           xcode-version: '16'
 
       - name: Download server artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-x86_64
           path: server-build
@@ -636,7 +771,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Upload Beebium.app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Beebium-macos-x86_64
           path: clients/macos/Beebium/build/Build/Products/Release/Beebium.app
@@ -650,12 +785,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -676,6 +811,39 @@ jobs:
         working-directory: clients/typescript
         run: npm run test:unit
 
+      # Enumerates test cases without running any, covering the unit and
+      # integration files alike (the integration cases run in a sibling job).
+      #
+      # `vitest list` omits skipped tests, so a case gated behind .skipIf() is
+      # counted where it runs and not where it does not: this reports 631 under
+      # CI=true against 632 without it, the difference being one it.skipIf(isCI)
+      # case. The C++ and Python counts do include their skipped tests, so the
+      # total is "cases that exist, less those TypeScript skips here". Left as
+      # is: the discrepancy is one test, and vitest offers no list-skipped knob.
+      #
+      # A bare `vitest list` is deliberate: passing --exclude replaces vitest's
+      # default exclude set rather than extending it, which lets discovery walk
+      # outside the client directory and silently inflate the count.
+      - name: Count tests
+        working-directory: clients/typescript
+        run: |
+          npx vitest list --json > list.json
+          python3 -c "
+          import json
+          tests = json.load(open('list.json'))
+          if not tests:
+              raise SystemExit('vitest collected no tests')
+          open('typescript.count', 'w').write(str(len(tests)))
+          print(f'typescript: {len(tests)}')
+          "
+
+      - name: Upload test count
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-count-typescript
+          path: clients/typescript/typescript.count
+          retention-days: 1
+
   typescript-integration-linux:
     name: TypeScript Client Integration Tests (Linux)
     runs-on: ubuntu-latest
@@ -683,7 +851,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install gRPC runtime libraries
         run: |
@@ -694,7 +862,7 @@ jobs:
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.so).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-linux
           path: build
@@ -702,9 +870,9 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install dependencies
         working-directory: clients/typescript
@@ -728,13 +896,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Extract at 'build/' so the artifact's src/server/ and lib/
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-arm64
           path: build
@@ -742,9 +910,9 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install protoc
         run: brew install protobuf
@@ -771,13 +939,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Extract at 'build/' so the artifact's src/server/ and lib/
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-x86_64
           path: build
@@ -785,9 +953,9 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install protoc
         run: brew install protobuf
@@ -815,15 +983,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Check generated proto stubs are in sync with their sources
         working-directory: clients/beebium-python-client
@@ -846,6 +1014,24 @@ jobs:
         # fails a hung test after 10 min rather than stalling the job.
         run: uv run python -m pytest tests/ -v --durations=0 --timeout=600
 
+      # One line per collected test ("path::test_name"), so counting the lines
+      # carrying "::" is independent of pytest's summary wording. Parametrised
+      # cases are collected individually and so count individually.
+      - name: Count tests
+        working-directory: clients/beebium-python-client
+        run: |
+          uv run python -m pytest tests/ --collect-only -q \
+            | grep -cE '::' > python.count
+          test -s python.count && [ "$(cat python.count)" -gt 0 ] || { echo "pytest collected no tests"; exit 1; }
+          echo "python: $(cat python.count)"
+
+      - name: Upload test count
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-count-python
+          path: clients/beebium-python-client/python.count
+          retention-days: 1
+
   python-integration-linux:
     name: Python Client Integration Tests (Linux)
     runs-on: ubuntu-latest
@@ -853,7 +1039,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install gRPC runtime libraries
         run: |
@@ -864,7 +1050,7 @@ jobs:
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.so).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-linux
           path: build
@@ -872,12 +1058,12 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Run integration tests
         working-directory: clients/beebium-python-client
@@ -898,21 +1084,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-windows
           path: build/src/server/Release
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Run integration tests
         working-directory: clients/beebium-python-client
@@ -931,13 +1117,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Extract at 'build/' so the artifact's src/server/ and lib/
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-arm64
           path: build
@@ -945,12 +1131,12 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Run integration tests
         working-directory: clients/beebium-python-client
@@ -969,13 +1155,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Extract at 'build/' so the artifact's src/server/ and lib/
       # entries land in the same relative layout the server's build-time
       # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: beebium-server-macos-x86_64
           path: build
@@ -983,12 +1169,12 @@ jobs:
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Run integration tests
         working-directory: clients/beebium-python-client
@@ -999,3 +1185,158 @@ jobs:
         # have data on which integration tests are genuinely long; --timeout=600
         # fails a hung test after 10 min rather than stalling the job.
         run: uv run python -m pytest tests/ -v --durations=0 --timeout=600
+
+  # Builds the npm tarball and exercises it the way a consumer would. Nothing
+  # else here can: the other jobs run `npm ci`, which installs devDependencies,
+  # so a runtime import reachable only by hoisting out of a dev-only package
+  # still resolves; and vitest resolves like a bundler, accepting extensionless
+  # specifiers that Node's ESM resolver rejects. Both had already let real
+  # breakage through -- undeclared protobufjs/long, and a dist/ that could not
+  # be imported at all -- while every check stayed green.
+  #
+  # This is also the only job that runs `npm run build`, and so the only one
+  # that proves the dist/ named by package.json "main" exists and works.
+  package-typescript:
+    name: TypeScript Client Package
+    runs-on: ubuntu-latest
+    needs: preflight
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install dependencies
+        working-directory: clients/typescript
+        run: npm ci
+
+      - name: Generate proto stubs
+        working-directory: clients/typescript
+        run: npm run generate-protos
+
+      - name: Build dist
+        working-directory: clients/typescript
+        run: npm run build
+
+      - name: Pack tarball
+        working-directory: clients/typescript
+        run: |
+          TARBALL=$(npm pack --pack-destination "$RUNNER_TEMP" | tail -1)
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+          echo "Packed $TARBALL"
+
+      # Installed by tarball into an empty directory, with --omit=dev, so
+      # resolution sees only what the package declares -- not this repo's
+      # node_modules.
+      - name: Install the tarball as a consumer
+        run: |
+          set -euo pipefail
+          CLEANROOM="$RUNNER_TEMP/cleanroom"
+          rm -rf "$CLEANROOM" && mkdir -p "$CLEANROOM"
+          cd "$CLEANROOM"
+          echo '{ "name": "cleanroom", "private": true, "type": "module" }' > package.json
+          npm install --omit=dev "$RUNNER_TEMP/$TARBALL"
+
+      - name: Smoke-test the installed package
+        run: |
+          set -euo pipefail
+          CLEANROOM="$RUNNER_TEMP/cleanroom"
+          cp "$GITHUB_WORKSPACE/clients/typescript/scripts/package-smoke.mjs" "$CLEANROOM/"
+          cd "$CLEANROOM"
+          node package-smoke.mjs
+
+  # Sums the per-suite counts and publishes a shields.io endpoint badge to the
+  # orphan `badges` branch, which the README points at. Keeping the JSON on its
+  # own branch keeps master's history free of once-per-push badge commits, and
+  # avoids depending on a gist (no external state, no PAT).
+  test-count-badge:
+    name: Publish test-count badge
+    runs-on: ubuntu-latest
+    needs: [server-linux, python-client, typescript-client]
+    # Publish only from master: a feature branch or PR must not move the number
+    # the README shows. `needs` also means a failed build never publishes a
+    # count. Pushes authenticated with GITHUB_TOKEN do not trigger workflows,
+    # so committing here cannot re-trigger CI.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download test counts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: test-count-*
+          merge-multiple: true
+          path: counts
+
+      - name: Build badge JSON
+        run: |
+          python3 -c "
+          import json, pathlib
+
+          counts = {p.stem: int(p.read_text().strip())
+                    for p in sorted(pathlib.Path('counts').glob('*.count'))}
+
+          # Refuse to publish a partial sum: a suite silently dropping out would
+          # otherwise look like tests being deleted.
+          expected = {'cpp', 'python', 'typescript'}
+          if set(counts) != expected:
+              raise SystemExit(f'expected counts for {sorted(expected)}, got {sorted(counts)}')
+
+          total = sum(counts.values())
+          for suite, n in sorted(counts.items()):
+              print(f'{suite:>12}: {n}')
+          print(f'{\"total\":>12}: {total}')
+
+          pathlib.Path('tests.json').write_text(json.dumps({
+              'schemaVersion': 1,
+              'label': 'tests',
+              'message': str(total),
+              'color': 'blue',
+          }))
+          pathlib.Path('total.txt').write_text(str(total))
+          "
+
+      - name: Publish to badges branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TOTAL="$(cat total.txt)"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # The branch is orphan and holds only the badge JSON, so clone it if it
+          # exists and bootstrap it if this is the first run.
+          if git clone --quiet --depth 1 --branch badges "$REMOTE" badges-repo 2>/dev/null; then
+            echo "Using existing badges branch"
+          else
+            echo "Bootstrapping badges branch"
+            mkdir badges-repo
+            git -C badges-repo init --quiet -b badges
+            git -C badges-repo remote add origin "$REMOTE"
+          fi
+
+          cp tests.json badges-repo/tests.json
+          cd badges-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests.json
+
+          # The count is unchanged on most pushes; committing anyway would add a
+          # commit per push for no information.
+          if git diff --staged --quiet; then
+            echo "Test count unchanged at ${TOTAL}; nothing to publish."
+            exit 0
+          fi
+
+          git commit --quiet -m "Update test-count badge: ${TOTAL} tests"
+          git push --quiet origin badges
+          echo "Published test count: ${TOTAL}"

@@ -69,6 +69,14 @@ enum RpcStatusCode : int {
     kRpcUnauthenticated = 16,
 };
 
+// Turn a protobuf SerializeToString() result into an RpcStatus. Extension
+// dispatchers route their response serialization through this so a failure
+// surfaces as an internal error rather than being silently discarded.
+inline RpcStatus serialized(bool serialize_ok) {
+    return serialize_ok ? RpcStatus::ok()
+                        : RpcStatus::error(kRpcInternal, "failed to serialize response");
+}
+
 // Per-call context, implemented by the core over grpc::ServerContext. Lets a
 // handler observe cancellation/deadline and read request metadata without
 // touching gRPC types.
