@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-import beebium.client
+import beebium.client.client
 from beebium.client import (
     PROTOCOL_FINGERPRINT,
     Beebium,
@@ -39,7 +39,13 @@ def test_mismatched_client_is_rejected_at_connect(
     beebium_server_filepath: Path | None,
 ) -> None:
     """A client whose fingerprint differs from the server's is refused."""
-    monkeypatch.setattr(beebium.client, "PROTOCOL_FINGERPRINT", "mismatched-fingerprint")
+    # Patch the name in the module that reads it. _verify_protocol compares
+    # against client.py's own global, bound by its `from ... import` at import
+    # time, so rebinding the re-export on the beebium.client package leaves the
+    # comparison untouched.
+    monkeypatch.setattr(
+        beebium.client.client, "PROTOCOL_FINGERPRINT", "mismatched-fingerprint"
+    )
     # This needs a real server (like the other integration tests); skip when one
     # is not available, e.g. in the unit-test job that builds no server.
     try:
